@@ -1,0 +1,365 @@
+#+TITLE: Wallboy
+#+AUTHOR: darkawower
+#+DESCRIPTION: CLI wallpaper manager for macOS
+
+* Wallboy
+
+A CLI utility for managing desktop wallpapers on macOS.
+
+Supports local and remote image sources with automatic light/dark theme detection.
+
+** Features
+
+- Automatic theme detection (light/dark) from macOS system settings
+- Local and remote image sources
+- Providers: Unsplash, Wallhaven, Generic URL
+- Temporary downloads for preview, save what you like
+- Dominant color analysis (k-means clustering)
+- Modern CLI with colored output
+- Cross-platform architecture (macOS primary, Linux/Windows support)
+
+** Installation
+
+#+begin_src bash
+go install github.com/darkawower/wallboy/cmd/wallboy@latest
+#+end_src
+
+Or build from source:
+
+#+begin_src bash
+git clone https://github.com/darkawower/wallboy
+cd wallboy
+go build -o wallboy ./cmd/wallboy
+#+end_src
+
+** Quick Start
+
+#+begin_src bash
+# Initialize config and directories
+wallboy init
+
+# Set a random wallpaper
+wallboy next
+
+# Save the current wallpaper if you like it
+wallboy save
+
+# Show current wallpaper info
+wallboy info
+
+# Show dominant colors
+wallboy colors
+#+end_src
+
+** Commands
+
+| Command                  | Description                                |
+|--------------------------+--------------------------------------------|
+| =wallboy init=           | Initialize config and directories          |
+| =wallboy next=           | Set a random wallpaper                     |
+| =wallboy save=           | Save current wallpaper (from temp to saved)|
+| =wallboy info=           | Show current wallpaper information         |
+| =wallboy show=           | Open wallpaper in default image viewer     |
+| =wallboy open=           | Reveal wallpaper in Finder                 |
+| =wallboy colors=         | Show dominant colors                       |
+| =wallboy delete=         | Delete current wallpaper and set new one   |
+| =wallboy sources=        | List all configured datasources            |
+| =wallboy agent-install=  | Install auto-rotation agent                |
+| =wallboy agent-status=   | Show agent status                          |
+| =wallboy agent-uninstall=| Uninstall auto-rotation agent              |
+| =wallboy version=        | Show version                               |
+
+** Flags
+
+| Flag            | Description                          |
+|-----------------+--------------------------------------|
+| =--config=      | Path to config file                  |
+| =--theme=       | Override theme (auto/light/dark)     |
+| =--source=      | Use specific datasource              |
+| =--dry-run=     | Show what would be done              |
+| =-v, --verbose= | Verbose output                       |
+| =-q, --quiet=   | Minimal output                       |
+
+** Workflow
+
+#+begin_src
+┌─────────────────────────────────────────────────────────────┐
+│                                                             │
+│  wallboy next                                               │
+│       │                                                     │
+│       ▼                                                     │
+│  ┌─────────────┐     ┌─────────────┐                        │
+│  │ Local       │ or  │ Remote      │                        │
+│  │ Datasource  │     │ Datasource  │                        │
+│  └──────┬──────┘     └──────┬──────┘                        │
+│         │                   │                               │
+│         │                   ▼                               │
+│         │           Download to temp/                       │
+│         │                   │                               │
+│         ▼                   ▼                               │
+│     Set as wallpaper ◄──────┘                               │
+│         │                                                   │
+│         ▼                                                   │
+│  ┌─────────────────────────────────────┐                    │
+│  │ Like it?                            │                    │
+│  │                                     │                    │
+│  │  wallboy save   → saved/            │                    │
+│  │  wallboy next   → delete, get next  │                    │
+│  │  wallboy delete → delete, get next  │                    │
+│  └─────────────────────────────────────┘                    │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+#+end_src
+
+** Configuration
+
+Configuration is stored in =~/.config/wallboy/config.toml=
+
+*** Minimal Config
+
+#+begin_src toml
+[theme]
+mode = "auto"  # auto | light | dark
+
+[light]
+[[light.datasource]]
+type = "local"
+dir = "~/Pictures"
+
+[dark]
+[[dark.datasource]]
+type = "local"
+dir = "~/Pictures"
+#+end_src
+
+*** Full Config Example
+
+#+begin_src toml
+upload-dir = "~/.config/wallboy/saved"
+
+[state]
+path = "~/.config/wallboy/state.json"
+
+[theme]
+mode = "auto"
+
+# Light theme sources
+[light]
+upload-dir = "~/.config/wallboy/saved/light"
+
+[[light.datasource]]
+id = "light-local"
+type = "local"
+dir = "~/Pictures/Wallpapers/Light"
+recursive = true
+
+[[light.datasource]]
+id = "light-unsplash"
+type = "remote"
+provider = "unsplash"
+auth = "${UNSPLASH_ACCESS_KEY}"
+queries = ["nature", "minimal", "bright"]
+
+# Dark theme sources
+[dark]
+upload-dir = "~/.config/wallboy/saved/dark"
+
+[[dark.datasource]]
+id = "dark-local"
+type = "local"
+dir = "~/Pictures/Wallpapers/Dark"
+recursive = true
+
+[[dark.datasource]]
+id = "dark-wallhaven"
+type = "remote"
+provider = "wallhaven"
+auth = "${WALLHAVEN_API_KEY}"
+queries = ["dark", "night", "space", "cyberpunk"]
+#+end_src
+
+** Datasources
+
+*** Local Datasource
+
+Uses images directly from a local directory.
+
+#+begin_src toml
+[[dark.datasource]]
+id = "my-local"           # optional, auto-generated if not set
+type = "local"
+dir = "~/Pictures/Dark"
+recursive = true          # default: true
+#+end_src
+
+Supported formats: =jpg=, =jpeg=, =png=, =webp=
+
+*** Remote Datasources
+
+When calling =next=, the image is downloaded to a temporary directory.
+If you like it, =save= moves it to =upload-dir=.
+If you don't, =next= or =delete= removes it and shows the next one.
+
+**** Wallhaven
+
+[[https://wallhaven.cc][Wallhaven]] is a popular wallpaper service with a large collection.
+
+1. Get your API key: https://wallhaven.cc/settings/account
+2. Export the key (optional):
+   #+begin_src bash
+   export WALLHAVEN_API_KEY="your_key_here"
+   #+end_src
+3. Add to config:
+
+#+begin_src toml
+[[dark.datasource]]
+id = "wallhaven-dark"
+type = "remote"
+provider = "wallhaven"
+auth = "${WALLHAVEN_API_KEY}"  # from environment variable
+queries = ["dark", "night", "space", "anime"]
+#+end_src
+
+Example queries for Wallhaven:
+- Dark: =dark=, =night=, =space=, =cyberpunk=, =noir=
+- Light: =nature=, =sky=, =minimal=, =white=
+- Genres: =anime=, =landscape=, =abstract=, =city=
+
+**** Unsplash
+
+[[https://unsplash.com][Unsplash]] offers free high-quality photos.
+
+1. Create an application: https://unsplash.com/developers
+2. Copy your Access Key
+3. Add to config:
+
+#+begin_src toml
+[[light.datasource]]
+id = "unsplash-nature"
+type = "remote"
+provider = "unsplash"
+auth = "${UNSPLASH_ACCESS_KEY}"  # from environment variable
+queries = ["nature", "landscape", "mountains"]
+#+end_src
+
+**** Generic (Direct URL)
+
+For direct image URLs.
+
+#+begin_src toml
+[[dark.datasource]]
+id = "custom"
+type = "remote"
+provider = "generic"
+url = "https://example.com/wallpaper.jpg"
+#+end_src
+
+*** Environment Variables in Auth
+
+The =auth= field supports environment variables:
+
+#+begin_src toml
+# From environment variable
+auth = "${WALLHAVEN_API_KEY}"
+
+# With fallback value (if variable is not set)
+auth = "${WALLHAVEN_API_KEY:-default_key}"
+
+# Alternative syntax
+auth = "$WALLHAVEN_API_KEY"
+
+# Or directly (not recommended for version control)
+auth = "actual_api_key"
+#+end_src
+
+** Examples
+
+*** Add Wallhaven and Use It
+
+#+begin_src bash
+# 1. Edit config
+vim ~/.config/wallboy/config.toml
+
+# Add:
+# [[dark.datasource]]
+# id = "wallhaven"
+# type = "remote"
+# provider = "wallhaven"
+# auth = "YOUR_API_KEY"
+# queries = ["dark", "space"]
+
+# 2. Get a wallpaper
+wallboy next --source wallhaven
+
+# 3. If you like it - save
+wallboy save
+
+# 4. If you don't - get next
+wallboy next
+#+end_src
+
+*** Use a Specific Source
+
+#+begin_src bash
+# List all sources
+wallboy sources
+
+# Use a specific one
+wallboy next --source wallhaven-dark
+#+end_src
+
+*** Force a Theme
+
+#+begin_src bash
+# Use dark theme regardless of system settings
+wallboy next --theme dark
+#+end_src
+
+*** Analyze Colors
+
+#+begin_src bash
+# Top 10 colors (default)
+wallboy colors
+
+# Top 5 colors
+wallboy colors --top 5
+#+end_src
+
+** Auto-rotation
+
+Wallboy can automatically change wallpapers at regular intervals using macOS launchctl.
+
+*** Install Agent
+
+#+begin_src bash
+# Install with default interval (10 minutes)
+wallboy agent-install
+
+# Install with custom interval (30 minutes)
+wallboy agent-install --interval=1800
+
+# Minimum interval is 60 seconds
+wallboy agent-install --interval=60
+#+end_src
+
+*** Check Status
+
+#+begin_src bash
+wallboy agent-status
+# ✔ Agent is running
+#   Interval: 10 minutes
+#   Log: ~/.config/wallboy/agent.log
+#+end_src
+
+*** View Logs
+
+#+begin_src bash
+tail -f ~/.config/wallboy/agent.log
+#+end_src
+
+*** Uninstall Agent
+
+#+begin_src bash
+wallboy agent-uninstall
+#+end_src
+

@@ -1,0 +1,7 @@
+[theme]
+mode = "light"
+
+[light]
+[[light.datasource]]
+type = "local"
+# dir is missing

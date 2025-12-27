@@ -1,0 +1,7 @@
+[theme]
+mode = "dark"
+
+[dark]
+[[dark.datasource]]
+type = "local"
+dir = "/tmp/pictures"

@@ -1,0 +1,39 @@
+upload-dir = "/tmp/wallboy/saved"
+
+[state]
+path = "/tmp/wallboy/state.json"
+
+[theme]
+mode = "auto"
+
+[light]
+upload-dir = "/tmp/wallboy/saved/light"
+
+[[light.datasource]]
+id = "light-local"
+type = "local"
+dir = "/tmp/wallboy/pictures/light"
+recursive = true
+
+[[light.datasource]]
+id = "light-unsplash"
+type = "remote"
+provider = "unsplash"
+auth = "test-key"
+queries = ["nature", "minimal"]
+
+[dark]
+upload-dir = "/tmp/wallboy/saved/dark"
+
+[[dark.datasource]]
+id = "dark-local"
+type = "local"
+dir = "/tmp/wallboy/pictures/dark"
+recursive = true
+
+[[dark.datasource]]
+id = "dark-wallhaven"
+type = "remote"
+provider = "wallhaven"
+auth = "test-api-key"
+queries = ["dark", "space"]

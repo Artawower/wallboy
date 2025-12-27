@@ -1,0 +1,7 @@
+[theme]
+mode = "invalid_mode"
+
+[light]
+[[light.datasource]]
+type = "local"
+dir = "/tmp/pictures"

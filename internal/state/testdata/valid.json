@@ -1,0 +1,14 @@
+{
+  "theme": "light",
+  "current": {
+    "path": "/tmp/wallpaper.jpg",
+    "source_id": "light-local",
+    "theme": "light",
+    "set_at": "2024-01-15T10:30:00Z",
+    "is_temp": false
+  },
+  "history": [
+    "/home/user/Pictures/old1.jpg",
+    "/home/user/Pictures/old2.jpg"
+  ]
+}

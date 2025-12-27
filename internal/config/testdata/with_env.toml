@@ -1,0 +1,9 @@
+[theme]
+mode = "dark"
+
+[dark]
+[[dark.datasource]]
+type = "remote"
+provider = "wallhaven"
+auth = "${TEST_API_KEY}"
+queries = ["dark"]
