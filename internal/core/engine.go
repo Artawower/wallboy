@@ -466,20 +466,30 @@ func (e *Engine) IsTempWallpaper() bool {
 	return e.state.IsTempWallpaper()
 }
 
+// GetCurrentWallpaperPath returns the actual current wallpaper path from the system.
+// This is more reliable than state when wallpaper may have been changed externally.
+func (e *Engine) GetCurrentWallpaperPath() (string, error) {
+	return e.platform.Wallpaper().Get()
+}
+
 // OpenInFinder opens the current wallpaper in the file manager.
+// Uses the actual system wallpaper path, not the cached state.
 func (e *Engine) OpenInFinder() error {
-	if !e.state.HasCurrent() {
-		return fmt.Errorf("no wallpaper currently set")
+	path, err := e.platform.Wallpaper().Get()
+	if err != nil {
+		return fmt.Errorf("failed to get current wallpaper: %w", err)
 	}
-	return e.platform.FileManager().Reveal(e.state.Current.Path)
+	return e.platform.FileManager().Reveal(path)
 }
 
 // OpenImage opens the current wallpaper in the default viewer.
+// Uses the actual system wallpaper path, not the cached state.
 func (e *Engine) OpenImage() error {
-	if !e.state.HasCurrent() {
-		return fmt.Errorf("no wallpaper currently set")
+	path, err := e.platform.Wallpaper().Get()
+	if err != nil {
+		return fmt.Errorf("failed to get current wallpaper: %w", err)
 	}
-	return e.platform.FileManager().Open(e.state.Current.Path)
+	return e.platform.FileManager().Open(path)
 }
 
 // Agent methods
