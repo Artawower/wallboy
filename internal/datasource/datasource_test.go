@@ -247,7 +247,7 @@ func TestManager_PickRandom(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		path := filepath.Join(tmpDir, filepath.Base(tmpDir), "img"+string(rune('A'+i))+".jpg")
 		dir := filepath.Dir(path)
-		os.MkdirAll(dir, 0755)
+		require.NoError(t, os.MkdirAll(dir, 0755))
 		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "img"+string(rune('A'+i))+".jpg"), []byte("test"), 0644))
 	}
 

@@ -192,12 +192,8 @@ func (c *Config) processThemeDatasources(themeName string, theme *ThemeConfig) {
 		// Expand environment variables in auth
 		ds.Auth = expandEnv(ds.Auth)
 
-		// Set default recursive
-		if ds.Type == DatasourceTypeLocal && ds.Dir != "" {
-			// Default to true if not explicitly set
-			// Note: TOML doesn't distinguish between false and unset for bools
-			// We set it in DefaultConfig anyway
-		}
+		// Note: Default recursive is set in DefaultConfig
+		// TOML doesn't distinguish between false and unset for bools
 
 		// Generate ID if not set
 		if ds.ID == "" {

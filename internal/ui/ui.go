@@ -311,7 +311,7 @@ func (o *Output) ColorSwatch(hex string) {
 	// Use the hex color as an ANSI 24-bit color for the block
 	// Parse hex color
 	var r, g, b int
-	fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b)
+	_, _ = fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b)
 
 	// Print a colored block followed by the hex code
 	block := fmt.Sprintf("\033[48;2;%d;%d;%dm  \033[0m", r, g, b)

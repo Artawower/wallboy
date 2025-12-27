@@ -396,7 +396,7 @@ func (m *Manager) GetRemoteSourcesForTheme(theme string) []*RemoteSource {
 func (m *Manager) CleanupTemp() {
 	for _, s := range m.sources {
 		if remote, ok := s.(*RemoteSource); ok {
-			remote.CleanTemp()
+			_ = remote.CleanTemp()
 		}
 	}
 }

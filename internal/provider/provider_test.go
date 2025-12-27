@@ -75,7 +75,7 @@ func TestBaseProvider_downloadFile(t *testing.T) {
 	t.Run("successful download", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("image data"))
+			_, _ = w.Write([]byte("image data"))
 		}))
 		defer server.Close()
 
@@ -125,7 +125,7 @@ func TestBaseProvider_downloadFile(t *testing.T) {
 	t.Run("creates parent directory", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("data"))
+			_, _ = w.Write([]byte("data"))
 		}))
 		defer server.Close()
 
@@ -175,7 +175,7 @@ func TestUnsplashProvider_Search(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -207,7 +207,7 @@ func TestUnsplashProvider_Search_MultipleQueries(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -239,7 +239,7 @@ func TestUnsplashProvider_Download(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("image bytes"))
+		_, _ = w.Write([]byte("image bytes"))
 	}))
 	defer server.Close()
 
@@ -295,7 +295,7 @@ func TestWallhavenProvider_Search(t *testing.T) {
 				},
 			},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -317,7 +317,7 @@ func TestWallhavenProvider_Search_NoAPIKey(t *testing.T) {
 		response := map[string]interface{}{
 			"data": []map[string]interface{}{},
 		}
-		json.NewEncoder(w).Encode(response)
+		_ = json.NewEncoder(w).Encode(response)
 	}))
 	defer server.Close()
 
@@ -332,7 +332,7 @@ func TestWallhavenProvider_Download(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("image bytes"))
+		_, _ = w.Write([]byte("image bytes"))
 	}))
 	defer server.Close()
 
@@ -390,7 +390,7 @@ func TestGenericProvider_Download(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("image bytes"))
+		_, _ = w.Write([]byte("image bytes"))
 	}))
 	defer server.Close()
 

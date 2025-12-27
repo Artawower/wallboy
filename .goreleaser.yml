@@ -1,0 +1,119 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: wallboy
+    main: ./cmd/wallboy
+    binary: wallboy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.org
+      - LICENSE*
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Performance
+      regexp: '^.*?perf(\(.+\))??!?:.+$'
+      order: 2
+    - title: Refactor
+      regexp: '^.*?refactor(\(.+\))??!?:.+$'
+      order: 3
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: darkawower
+    name: wallboy
+  draft: false
+  prerelease: auto
+  mode: replace
+  header: |
+    ## Wallboy {{ .Version }}
+    
+    Cross-platform wallpaper manager with auto-rotation support.
+  footer: |
+    ## Installation
+    
+    ### macOS (Homebrew)
+    ```bash
+    brew install darkawower/tap/wallboy
+    ```
+    
+    ### Manual
+    Download the appropriate archive for your platform, extract, and add to PATH.
+    
+    ### Go Install
+    ```bash
+    go install github.com/darkawower/wallboy/cmd/wallboy@{{ .Tag }}
+    ```
+
+brews:
+  - name: wallboy
+    repository:
+      owner: darkawower
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/darkawower/wallboy"
+    description: "Cross-platform wallpaper manager with auto-rotation"
+    license: "MIT"
+    install: |
+      bin.install "wallboy"
+    test: |
+      system "#{bin}/wallboy", "version"
+    skip_upload: auto

@@ -17,6 +17,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Version info (set via ldflags)
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 // Agent constants
 const (
 	defaultInterval = 600 // 10 minutes
@@ -521,7 +528,13 @@ func newVersionCmd() *cobra.Command {
 		Short: "Show version information",
 		Run: func(cmd *cobra.Command, args []string) {
 			initOutput()
-			out.Print("wallboy version 0.1.0")
+			out.Print("wallboy %s", version)
+			if commit != "none" {
+				out.Field("Commit", commit)
+			}
+			if date != "unknown" {
+				out.Field("Built", date)
+			}
 		},
 	}
 }
