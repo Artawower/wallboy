@@ -1,14 +1,14 @@
 #+TITLE: Wallboy
 #+AUTHOR: darkawower
 #+DESCRIPTION: CLI wallpaper manager for macOS
-
-* Wallboy
+#+html: <img src="./images/wallboy.webp" align="right" width="25%">
 
 A CLI utility for managing desktop wallpapers on macOS.
 
 Supports local and remote image sources with automatic light/dark theme detection.
 
-** Features
+
+Features
 
 - Automatic theme detection (light/dark) from macOS system settings
 - Local and remote image sources
@@ -362,4 +362,3 @@ tail -f ~/.config/wallboy/agent.log
 #+begin_src bash
 wallboy agent-uninstall
 #+end_src
-
