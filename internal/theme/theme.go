@@ -2,8 +2,8 @@
 package theme
 
 import (
-	"github.com/darkawower/wallboy/internal/config"
-	"github.com/darkawower/wallboy/internal/platform"
+	"github.com/Artawower/wallboy/internal/config"
+	"github.com/Artawower/wallboy/internal/platform"
 )
 
 // Theme represents the current theme.

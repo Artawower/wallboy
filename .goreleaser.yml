@@ -84,7 +84,7 @@ release:
     
     ### macOS (Homebrew)
     ```bash
-    brew install darkawower/tap/wallboy
+    brew install Artawower/tap/wallboy
     ```
     
     ### Manual
@@ -92,7 +92,7 @@ release:
     
     ### Go Install
     ```bash
-    go install github.com/darkawower/wallboy/cmd/wallboy@{{ .Tag }}
+    go install github.com/Artawower/wallboy/cmd/wallboy@{{ .Tag }}
     ```
 
 brews:
@@ -109,5 +109,4 @@ brews:
       bin.install "wallboy"
     test: |
       system "#{bin}/wallboy", "version"
-    # Skip until homebrew-tap repo is created and HOMEBREW_TAP_TOKEN secret is set
-    skip_upload: true
+    skip_upload: auto

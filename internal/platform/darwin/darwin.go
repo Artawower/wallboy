@@ -3,7 +3,7 @@
 // Package darwin provides macOS-specific platform implementations.
 package darwin
 
-import "github.com/darkawower/wallboy/internal/platform"
+import "github.com/Artawower/wallboy/internal/platform"
 
 func init() {
 	platform.Register("darwin", func() platform.Platform {

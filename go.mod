@@ -1,4 +1,4 @@
-module github.com/darkawower/wallboy
+module github.com/Artawower/wallboy
 
 go 1.24.0
 

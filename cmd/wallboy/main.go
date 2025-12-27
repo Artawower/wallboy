@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/darkawower/wallboy/internal/config"
-	"github.com/darkawower/wallboy/internal/core"
-	"github.com/darkawower/wallboy/internal/state"
-	"github.com/darkawower/wallboy/internal/ui"
+	"github.com/Artawower/wallboy/internal/config"
+	"github.com/Artawower/wallboy/internal/core"
+	"github.com/Artawower/wallboy/internal/state"
+	"github.com/Artawower/wallboy/internal/ui"
 	"github.com/spf13/cobra"
 )
 

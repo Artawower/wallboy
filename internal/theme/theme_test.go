@@ -3,7 +3,7 @@ package theme
 import (
 	"testing"
 
-	"github.com/darkawower/wallboy/internal/config"
+	"github.com/Artawower/wallboy/internal/config"
 	"github.com/stretchr/testify/assert"
 )
 

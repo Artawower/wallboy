@@ -3,7 +3,7 @@ package stub
 import (
 	"testing"
 
-	"github.com/darkawower/wallboy/internal/platform"
+	"github.com/Artawower/wallboy/internal/platform"
 	"github.com/stretchr/testify/assert"
 )
 

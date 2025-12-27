@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/darkawower/wallboy/internal/config"
+	"github.com/Artawower/wallboy/internal/config"
 )
 
 // SupportedExtensions are the image file extensions we support.

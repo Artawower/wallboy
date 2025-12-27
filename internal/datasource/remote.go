@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/darkawower/wallboy/internal/config"
-	"github.com/darkawower/wallboy/internal/provider"
+	"github.com/Artawower/wallboy/internal/config"
+	"github.com/Artawower/wallboy/internal/provider"
 )
 
 // RemoteSource implements Source for remote providers.

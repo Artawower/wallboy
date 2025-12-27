@@ -4,5 +4,5 @@ package main
 
 import (
 	// Register darwin platform implementation
-	_ "github.com/darkawower/wallboy/internal/platform/darwin"
+	_ "github.com/Artawower/wallboy/internal/platform/darwin"
 )

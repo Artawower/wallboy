@@ -4,7 +4,7 @@ package core
 import (
 	"time"
 
-	"github.com/darkawower/wallboy/internal/platform"
+	"github.com/Artawower/wallboy/internal/platform"
 )
 
 // WallpaperResult represents the result of a wallpaper operation.

@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/darkawower/wallboy/internal/platform"
+	"github.com/Artawower/wallboy/internal/platform"
 )
 
 // ThemeService implements platform.ThemeService for macOS.

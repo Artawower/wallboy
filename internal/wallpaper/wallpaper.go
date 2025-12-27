@@ -4,7 +4,7 @@ package wallpaper
 import (
 	"path/filepath"
 
-	"github.com/darkawower/wallboy/internal/platform"
+	"github.com/Artawower/wallboy/internal/platform"
 )
 
 // Setter is the interface for setting wallpapers.

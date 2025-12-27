@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/darkawower/wallboy/internal/colors"
-	"github.com/darkawower/wallboy/internal/config"
-	"github.com/darkawower/wallboy/internal/datasource"
-	"github.com/darkawower/wallboy/internal/platform"
-	"github.com/darkawower/wallboy/internal/state"
+	"github.com/Artawower/wallboy/internal/colors"
+	"github.com/Artawower/wallboy/internal/config"
+	"github.com/Artawower/wallboy/internal/datasource"
+	"github.com/Artawower/wallboy/internal/platform"
+	"github.com/Artawower/wallboy/internal/state"
 )
 
 // Engine is the main wallpaper management engine.
