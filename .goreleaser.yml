@@ -14,13 +14,9 @@ builds:
     goos:
       - darwin
       - linux
-      - windows
     goarch:
       - amd64
       - arm64
-    ignore:
-      - goos: windows
-        goarch: arm64
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -35,9 +31,6 @@ archives:
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
-    format_overrides:
-      - goos: windows
-        format: zip
     files:
       - README.org
       - LICENSE*
@@ -77,7 +70,7 @@ changelog:
 
 release:
   github:
-    owner: darkawower
+    owner: Artawower
     name: wallboy
   draft: false
   prerelease: auto
@@ -105,15 +98,16 @@ release:
 brews:
   - name: wallboy
     repository:
-      owner: darkawower
+      owner: Artawower
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
-    homepage: "https://github.com/darkawower/wallboy"
+    homepage: "https://github.com/Artawower/wallboy"
     description: "Cross-platform wallpaper manager with auto-rotation"
     license: "MIT"
     install: |
       bin.install "wallboy"
     test: |
       system "#{bin}/wallboy", "version"
-    skip_upload: auto
+    # Skip until homebrew-tap repo is created and HOMEBREW_TAP_TOKEN secret is set
+    skip_upload: true
