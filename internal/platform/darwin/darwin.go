@@ -1,3 +1,5 @@
+//go:build darwin
+
 // Package darwin provides macOS-specific platform implementations.
 package darwin
 

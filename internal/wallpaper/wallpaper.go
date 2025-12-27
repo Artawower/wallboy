@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	"github.com/darkawower/wallboy/internal/platform"
-	_ "github.com/darkawower/wallboy/internal/platform/darwin" // Register darwin platform
 )
 
 // Setter is the interface for setting wallpapers.

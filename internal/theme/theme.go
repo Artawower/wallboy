@@ -4,7 +4,6 @@ package theme
 import (
 	"github.com/darkawower/wallboy/internal/config"
 	"github.com/darkawower/wallboy/internal/platform"
-	_ "github.com/darkawower/wallboy/internal/platform/darwin" // Register darwin platform
 )
 
 // Theme represents the current theme.
