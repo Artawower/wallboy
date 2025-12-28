@@ -18,7 +18,6 @@ type mockProvider struct {
 	searchQueries [][]string // records all Search calls
 	searchResults []provider.ImageMeta
 	searchErr     error
-	downloadDest  string
 	downloadErr   error
 }
 
