@@ -353,15 +353,33 @@ func TestManager_FetchRandomFromRemote(t *testing.T) {
 	m.AddSource(NewLocalSource(cfg, "light"))
 
 	t.Run("not a remote source", func(t *testing.T) {
-		img, err := m.FetchRandomFromRemote(context.Background(), "local-source")
+		img, err := m.FetchRandomFromRemote(context.Background(), "local-source", "")
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not a remote source")
 		assert.Nil(t, img)
 	})
 
 	t.Run("source not found", func(t *testing.T) {
-		img, err := m.FetchRandomFromRemote(context.Background(), "nonexistent")
+		img, err := m.FetchRandomFromRemote(context.Background(), "nonexistent", "")
 		require.Error(t, err)
+		assert.Nil(t, img)
+	})
+}
+
+func TestManager_FetchRandomFromRemote_QueryOverride(t *testing.T) {
+	// This test verifies that queryOverride is passed through to the remote source.
+	// We can't easily test the actual behavior without mocking the provider,
+	// but we can verify the API signature works correctly.
+	m := NewManager("/upload", "/temp")
+
+	cfg := config.Datasource{ID: "local-source", Dir: "/tmp"}
+	m.AddSource(NewLocalSource(cfg, "light"))
+
+	t.Run("query override passed to local source returns error", func(t *testing.T) {
+		// Local sources don't support fetch, so this should still error
+		img, err := m.FetchRandomFromRemote(context.Background(), "local-source", "nature")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a remote source")
 		assert.Nil(t, img)
 	})
 }

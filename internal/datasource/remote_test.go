@@ -2,14 +2,53 @@ package datasource
 
 import (
 	"context"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/Artawower/wallboy/internal/config"
+	"github.com/Artawower/wallboy/internal/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// mockProvider is a test provider that records calls and returns configured responses.
+type mockProvider struct {
+	name          string
+	searchQueries [][]string // records all Search calls
+	searchResults []provider.ImageMeta
+	searchErr     error
+	downloadDest  string
+	downloadErr   error
+}
+
+func (m *mockProvider) Name() string {
+	return m.name
+}
+
+func (m *mockProvider) Search(ctx context.Context, queries []string) ([]provider.ImageMeta, error) {
+	m.searchQueries = append(m.searchQueries, queries)
+	if m.searchErr != nil {
+		return nil, m.searchErr
+	}
+	return m.searchResults, nil
+}
+
+func (m *mockProvider) Download(ctx context.Context, meta provider.ImageMeta, dest string) (string, error) {
+	if m.downloadErr != nil {
+		return "", m.downloadErr
+	}
+	// Create parent directory if needed
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return "", err
+	}
+	// Create the file at the exact destination path
+	if err := os.WriteFile(dest, []byte("image data"), 0644); err != nil {
+		return "", err
+	}
+	return dest, nil
+}
 
 func TestNewRemoteSource(t *testing.T) {
 	cfg := config.Datasource{
@@ -185,10 +224,97 @@ func TestRemoteSource_FetchRandom_NoProvider(t *testing.T) {
 		theme:     "light",
 	}
 
-	img, err := source.FetchRandom(context.Background())
+	img, err := source.FetchRandom(context.Background(), "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no provider")
 	assert.Nil(t, img)
+}
+
+func TestRemoteSource_FetchRandom_WithQueryOverride(t *testing.T) {
+	tmpDir := t.TempDir()
+	tempDir := filepath.Join(tmpDir, "temp")
+	uploadDir := filepath.Join(tmpDir, "upload")
+
+	mock := &mockProvider{
+		name: "mock",
+		searchResults: []provider.ImageMeta{
+			{ID: "img1", DownloadURL: "http://example.com/img1.jpg"},
+			{ID: "img2", DownloadURL: "http://example.com/img2.jpg"},
+		},
+	}
+
+	source := &RemoteSource{
+		id:        "test-remote",
+		provider:  mock,
+		queries:   []string{"nature", "landscape"}, // configured queries
+		uploadDir: uploadDir,
+		tempDir:   tempDir,
+		theme:     "light",
+		rng:       rand.New(rand.NewSource(42)), // seeded for reproducibility
+	}
+
+	t.Run("uses configured queries when no override", func(t *testing.T) {
+		mock.searchQueries = nil // reset
+
+		_, err := source.FetchRandom(context.Background(), "")
+		require.NoError(t, err)
+
+		require.Len(t, mock.searchQueries, 1)
+		assert.Equal(t, []string{"nature", "landscape"}, mock.searchQueries[0])
+	})
+
+	t.Run("uses query override instead of configured queries", func(t *testing.T) {
+		mock.searchQueries = nil // reset
+
+		_, err := source.FetchRandom(context.Background(), "mountains sunset")
+		require.NoError(t, err)
+
+		require.Len(t, mock.searchQueries, 1)
+		assert.Equal(t, []string{"mountains sunset"}, mock.searchQueries[0])
+	})
+
+	t.Run("query override replaces multiple configured queries", func(t *testing.T) {
+		mock.searchQueries = nil // reset
+
+		_, err := source.FetchRandom(context.Background(), "ocean")
+		require.NoError(t, err)
+
+		require.Len(t, mock.searchQueries, 1)
+		// Should be single override query, not the configured ["nature", "landscape"]
+		assert.Equal(t, []string{"ocean"}, mock.searchQueries[0])
+	})
+}
+
+func TestRemoteSource_FetchRandom_ReturnsImage(t *testing.T) {
+	tmpDir := t.TempDir()
+	tempDir := filepath.Join(tmpDir, "temp")
+	uploadDir := filepath.Join(tmpDir, "upload")
+
+	mock := &mockProvider{
+		name: "mock",
+		searchResults: []provider.ImageMeta{
+			{ID: "img1", DownloadURL: "http://example.com/img1.jpg"},
+		},
+	}
+
+	source := &RemoteSource{
+		id:        "test-remote",
+		provider:  mock,
+		queries:   []string{"nature"},
+		uploadDir: uploadDir,
+		tempDir:   tempDir,
+		theme:     "dark",
+		rng:       rand.New(rand.NewSource(42)),
+	}
+
+	img, err := source.FetchRandom(context.Background(), "")
+	require.NoError(t, err)
+	require.NotNil(t, img)
+
+	assert.Equal(t, "test-remote", img.SourceID)
+	assert.Equal(t, "dark", img.Theme)
+	assert.False(t, img.IsLocal)
+	assert.Contains(t, img.Path, tempDir)
 }
 
 func TestCopyFile(t *testing.T) {

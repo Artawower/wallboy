@@ -130,4 +130,28 @@ func TestWithOptions(t *testing.T) {
 
 	WithDryRun(true)(e)
 	assert.True(t, e.dryRun)
+
+	WithQueryOverride("nature landscape")(e)
+	assert.Equal(t, "nature landscape", e.queryOverride)
+}
+
+func TestWithQueryOverride(t *testing.T) {
+	tests := []struct {
+		name     string
+		query    string
+		expected string
+	}{
+		{"empty query", "", ""},
+		{"single word", "nature", "nature"},
+		{"multiple words", "nature landscape mountains", "nature landscape mountains"},
+		{"with special chars", "dark wallpaper 4k", "dark wallpaper 4k"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &Engine{}
+			WithQueryOverride(tt.query)(e)
+			assert.Equal(t, tt.expected, e.queryOverride)
+		})
+	}
 }

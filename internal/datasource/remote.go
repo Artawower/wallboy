@@ -112,7 +112,8 @@ func (s *RemoteSource) ListImages(ctx context.Context) ([]Image, error) {
 
 // FetchRandom fetches a random image from remote and downloads to temp directory.
 // Returns the temporary path to the downloaded image.
-func (s *RemoteSource) FetchRandom(ctx context.Context) (*Image, error) {
+// If queryOverride is not empty, it will be used instead of configured queries.
+func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*Image, error) {
 	if s.provider == nil {
 		return nil, fmt.Errorf("no provider configured")
 	}
@@ -122,8 +123,14 @@ func (s *RemoteSource) FetchRandom(ctx context.Context) (*Image, error) {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
+	// Use override or configured queries
+	queries := s.queries
+	if queryOverride != "" {
+		queries = []string{queryOverride}
+	}
+
 	// Search for images
-	metas, err := s.provider.Search(ctx, s.queries)
+	metas, err := s.provider.Search(ctx, queries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search images: %w", err)
 	}

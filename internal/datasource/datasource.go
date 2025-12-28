@@ -327,7 +327,8 @@ func (m *Manager) PickRandomFromSource(ctx context.Context, sourceID string, exc
 
 // FetchRandomFromRemote fetches a random image from a remote source.
 // Downloads to temp directory.
-func (m *Manager) FetchRandomFromRemote(ctx context.Context, sourceID string) (*Image, error) {
+// If queryOverride is not empty, it will be used instead of configured queries.
+func (m *Manager) FetchRandomFromRemote(ctx context.Context, sourceID, queryOverride string) (*Image, error) {
 	source, err := m.GetSourceByID(sourceID)
 	if err != nil {
 		return nil, err
@@ -338,7 +339,7 @@ func (m *Manager) FetchRandomFromRemote(ctx context.Context, sourceID string) (*
 		return nil, fmt.Errorf("source %s is not a remote source", sourceID)
 	}
 
-	return remote.FetchRandom(ctx)
+	return remote.FetchRandom(ctx, queryOverride)
 }
 
 // SaveCurrentImage saves an image from temp to upload directory.

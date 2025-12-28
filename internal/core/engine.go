@@ -25,6 +25,7 @@ type Engine struct {
 	// Options
 	themeOverride  string
 	sourceOverride string
+	queryOverride  string
 	dryRun         bool
 }
 
@@ -49,6 +50,13 @@ func WithSourceOverride(source string) Option {
 func WithDryRun(dryRun bool) Option {
 	return func(e *Engine) {
 		e.dryRun = dryRun
+	}
+}
+
+// WithQueryOverride sets a query override for remote sources.
+func WithQueryOverride(query string) Option {
+	return func(e *Engine) {
+		e.queryOverride = query
 	}
 }
 
@@ -178,6 +186,9 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 	// Pick image based on whether source was specified
 	if e.sourceOverride != "" {
 		img, isTemp, err = e.pickNextImageFromSource(ctx, e.sourceOverride)
+	} else if e.queryOverride != "" {
+		// Query without source - use random remote source
+		img, isTemp, err = e.pickFromRandomRemote(ctx, string(currentTheme))
 	} else {
 		img, isTemp, err = e.pickNextImage(ctx, string(currentTheme))
 	}
@@ -223,7 +234,37 @@ func (e *Engine) pickNextImage(ctx context.Context, themeName string) (*datasour
 		return nil, false, fmt.Errorf("no datasources available")
 	}
 
-	// Separate local and remote sources
+	localSources, remoteSources := e.separateSources(sources)
+
+	useRemote := e.shouldUseRemote(localSources, remoteSources)
+
+	if useRemote {
+		img, err := e.tryRemoteSources(ctx, remoteSources)
+		if err == nil {
+			return img, true, nil
+		}
+		if len(localSources) > 0 {
+			img, err := e.manager.PickRandom(ctx, themeName, e.state.History)
+			if err == nil {
+				return img, false, nil
+			}
+		}
+		return nil, false, fmt.Errorf("failed to fetch from remote: %w", err)
+	}
+
+	img, err := e.manager.PickRandom(ctx, themeName, e.state.History)
+	if err != nil {
+		img, remoteErr := e.tryRemoteSources(ctx, remoteSources)
+		if remoteErr == nil {
+			return img, true, nil
+		}
+		return nil, false, fmt.Errorf("failed to pick image: %w", err)
+	}
+
+	return img, false, nil
+}
+
+func (e *Engine) separateSources(sources []datasource.Source) ([]datasource.Source, []*datasource.RemoteSource) {
 	var localSources []datasource.Source
 	var remoteSources []*datasource.RemoteSource
 	for _, s := range sources {
@@ -233,59 +274,36 @@ func (e *Engine) pickNextImage(ctx context.Context, themeName string) (*datasour
 			remoteSources = append(remoteSources, remote)
 		}
 	}
+	return localSources, remoteSources
+}
 
-	// If we have both local and remote, randomly pick which type to use
-	useRemote := false
+func (e *Engine) shouldUseRemote(localSources []datasource.Source, remoteSources []*datasource.RemoteSource) bool {
 	if len(localSources) > 0 && len(remoteSources) > 0 {
-		useRemote = rand.Intn(2) == 0
-	} else if len(remoteSources) > 0 {
-		useRemote = true
+		return rand.Intn(2) == 0
+	}
+	return len(remoteSources) > 0
+}
+
+func (e *Engine) tryRemoteSources(ctx context.Context, remoteSources []*datasource.RemoteSource) (*datasource.Image, error) {
+	if len(remoteSources) == 0 {
+		return nil, fmt.Errorf("no remote sources available")
 	}
 
-	// Remote: always fetch new image, with fallback to other sources
-	if useRemote {
-		// Shuffle remote sources for random order
-		shuffledRemotes := make([]*datasource.RemoteSource, len(remoteSources))
-		copy(shuffledRemotes, remoteSources)
-		rand.Shuffle(len(shuffledRemotes), func(i, j int) {
-			shuffledRemotes[i], shuffledRemotes[j] = shuffledRemotes[j], shuffledRemotes[i]
-		})
+	shuffled := make([]*datasource.RemoteSource, len(remoteSources))
+	copy(shuffled, remoteSources)
+	rand.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
 
-		// Try each remote source
-		var lastErr error
-		for _, remote := range shuffledRemotes {
-			img, err := remote.FetchRandom(ctx)
-			if err == nil {
-				return img, true, nil
-			}
-			lastErr = err
+	var lastErr error
+	for _, remote := range shuffled {
+		img, err := remote.FetchRandom(ctx, e.queryOverride)
+		if err == nil {
+			return img, nil
 		}
-
-		// All remotes failed, fallback to local if available
-		if len(localSources) > 0 {
-			img, err := e.manager.PickRandom(ctx, themeName, e.state.History)
-			if err == nil {
-				return img, false, nil
-			}
-		}
-
-		return nil, false, fmt.Errorf("failed to fetch from remote: %w", lastErr)
+		lastErr = err
 	}
-
-	// Local: pick from existing images
-	img, err := e.manager.PickRandom(ctx, themeName, e.state.History)
-	if err != nil {
-		// No local images, try remote as fallback
-		for _, remote := range remoteSources {
-			img, err := remote.FetchRandom(ctx)
-			if err == nil {
-				return img, true, nil
-			}
-		}
-		return nil, false, fmt.Errorf("failed to pick image: %w", err)
-	}
-
-	return img, false, nil
+	return nil, lastErr
 }
 
 // pickNextImageFromSource picks an image from a specific source.
@@ -297,7 +315,7 @@ func (e *Engine) pickNextImageFromSource(ctx context.Context, sourceID string) (
 
 	// Remote: always fetch new
 	if source.Type() == config.DatasourceTypeRemote {
-		img, err := e.manager.FetchRandomFromRemote(ctx, sourceID)
+		img, err := e.manager.FetchRandomFromRemote(ctx, sourceID, e.queryOverride)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to fetch from remote: %w", err)
 		}
@@ -588,4 +606,19 @@ func (e *Engine) Platform() platform.Platform {
 // Config returns the current config.
 func (e *Engine) Config() *config.Config {
 	return e.config
+}
+
+func (e *Engine) pickFromRandomRemote(ctx context.Context, themeName string) (*datasource.Image, bool, error) {
+	sources := e.manager.GetSourcesByTheme(themeName)
+	_, remoteSources := e.separateSources(sources)
+
+	if len(remoteSources) == 0 {
+		return e.pickNextImage(ctx, themeName)
+	}
+
+	img, err := e.tryRemoteSources(ctx, remoteSources)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to fetch from remote sources: %w", err)
+	}
+	return img, true, nil
 }

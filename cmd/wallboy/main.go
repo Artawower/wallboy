@@ -102,6 +102,11 @@ func initOutput() {
 
 // newEngine creates a new engine with current flags.
 func newEngine() (*core.Engine, error) {
+	return newEngineWithQuery("")
+}
+
+// newEngineWithQuery creates a new engine with current flags and optional query override.
+func newEngineWithQuery(query string) (*core.Engine, error) {
 	var opts []core.Option
 	if themeFlag != "" {
 		opts = append(opts, core.WithThemeOverride(themeFlag))
@@ -111,6 +116,9 @@ func newEngine() (*core.Engine, error) {
 	}
 	if dryRun {
 		opts = append(opts, core.WithDryRun(true))
+	}
+	if query != "" {
+		opts = append(opts, core.WithQueryOverride(query))
 	}
 
 	return core.New(cfgFile, opts...)
@@ -179,6 +187,7 @@ func newInitCmd() *cobra.Command {
 // newNextCmd creates the next command.
 func newNextCmd() *cobra.Command {
 	var openAfter bool
+	var queryFlag string
 
 	cmd := &cobra.Command{
 		Use:   "next",
@@ -190,7 +199,7 @@ Use 'wallboy save' to keep the image permanently.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			initOutput()
 
-			engine, err := newEngine()
+			engine, err := newEngineWithQuery(queryFlag)
 			if err != nil {
 				out.ErrorWithHint(err.Error(), "Run 'wallboy init' to create a default configuration")
 				return err
@@ -228,6 +237,7 @@ Use 'wallboy save' to keep the image permanently.`,
 	}
 
 	cmd.Flags().BoolVar(&openAfter, "open", false, "open image in Finder after setting")
+	cmd.Flags().StringVar(&queryFlag, "query", "", "override search query for remote sources")
 
 	return cmd
 }
