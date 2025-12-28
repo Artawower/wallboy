@@ -125,7 +125,7 @@ func (p *UnsplashProvider) Search(ctx context.Context, queries []string) ([]Imag
 
 	// Default query if none provided
 	if len(queries) == 0 {
-		queries = []string{"wallpaper"}
+		queries = []string{"random"}
 	}
 
 	perQuery := DefaultSearchLimit / len(queries)
@@ -249,7 +249,7 @@ func (p *WallhavenProvider) Search(ctx context.Context, queries []string) ([]Ima
 
 	// Default query if none provided
 	if len(queries) == 0 {
-		queries = []string{"wallpaper"}
+		queries = []string{"random"}
 	}
 
 	perQuery := DefaultSearchLimit / len(queries)
