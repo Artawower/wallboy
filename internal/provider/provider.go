@@ -121,12 +121,12 @@ func (p *UnsplashProvider) Name() string {
 
 // Search searches for images on Unsplash.
 func (p *UnsplashProvider) Search(ctx context.Context, queries []string) ([]ImageMeta, error) {
-	var allResults []ImageMeta
-
-	// Default query if none provided
+	// If no queries, use random photos endpoint
 	if len(queries) == 0 {
-		queries = []string{"random"}
+		return p.fetchRandom(ctx, DefaultSearchLimit)
 	}
+
+	var allResults []ImageMeta
 
 	perQuery := DefaultSearchLimit / len(queries)
 	if perQuery < 1 {
@@ -146,6 +146,61 @@ func (p *UnsplashProvider) Search(ctx context.Context, queries []string) ([]Imag
 	}
 
 	return allResults, nil
+}
+
+// fetchRandom fetches random photos from Unsplash without a query.
+func (p *UnsplashProvider) fetchRandom(ctx context.Context, count int) ([]ImageMeta, error) {
+	u := fmt.Sprintf("%s/photos/random?count=%d&orientation=landscape", p.baseURL, count)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Authorization", "Client-ID "+p.accessKey)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status: %d", resp.StatusCode)
+	}
+
+	var results []struct {
+		ID   string `json:"id"`
+		URLs struct {
+			Raw     string `json:"raw"`
+			Full    string `json:"full"`
+			Regular string `json:"regular"`
+		} `json:"urls"`
+		Width  int `json:"width"`
+		Height int `json:"height"`
+		User   struct {
+			Name string `json:"name"`
+		} `json:"user"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+		return nil, err
+	}
+
+	var images []ImageMeta
+	for _, r := range results {
+		images = append(images, ImageMeta{
+			ID:          r.ID,
+			URL:         r.URLs.Regular,
+			DownloadURL: r.URLs.Full,
+			Width:       r.Width,
+			Height:      r.Height,
+			Author:      r.User.Name,
+			Source:      "unsplash",
+		})
+	}
+
+	return images, nil
 }
 
 func (p *UnsplashProvider) searchQuery(ctx context.Context, query string, limit int) ([]ImageMeta, error) {
@@ -245,12 +300,12 @@ func (p *WallhavenProvider) Name() string {
 
 // Search searches for images on Wallhaven.
 func (p *WallhavenProvider) Search(ctx context.Context, queries []string) ([]ImageMeta, error) {
-	var allResults []ImageMeta
-
-	// Default query if none provided
+	// If no queries, fetch random/popular without search term
 	if len(queries) == 0 {
-		queries = []string{"random"}
+		return p.searchQuery(ctx, "", DefaultSearchLimit)
 	}
+
+	var allResults []ImageMeta
 
 	perQuery := DefaultSearchLimit / len(queries)
 	if perQuery < 1 {
@@ -273,8 +328,14 @@ func (p *WallhavenProvider) Search(ctx context.Context, queries []string) ([]Ima
 }
 
 func (p *WallhavenProvider) searchQuery(ctx context.Context, query string, limit int) ([]ImageMeta, error) {
-	u := fmt.Sprintf("%s/search?q=%s&categories=111&purity=100&sorting=relevance&order=desc",
-		p.baseURL, url.QueryEscape(query))
+	var u string
+	if query == "" {
+		// No query - get random wallpapers
+		u = fmt.Sprintf("%s/search?categories=111&purity=100&sorting=random", p.baseURL)
+	} else {
+		u = fmt.Sprintf("%s/search?q=%s&categories=111&purity=100&sorting=relevance&order=desc",
+			p.baseURL, url.QueryEscape(query))
+	}
 
 	if p.apiKey != "" {
 		u += "&apikey=" + p.apiKey
