@@ -237,6 +237,51 @@ func TestManager_GetRemoteSourceByID(t *testing.T) {
 	})
 }
 
+func TestManager_GetRemoteSourceByProvider(t *testing.T) {
+	m := NewManager("/upload", "/temp")
+
+	// Add remote sources
+	m.AddRemoteSource(NewRemoteSource("dark-bing", "bing", "", "dark", "/upload", "/temp", nil))
+	m.AddRemoteSource(NewRemoteSource("dark-wallhaven", "wallhaven", "key", "dark", "/upload", "/temp", nil))
+	m.AddRemoteSource(NewRemoteSource("light-unsplash", "unsplash", "key", "light", "/upload", "/temp", nil))
+
+	t.Run("finds bing provider for dark theme", func(t *testing.T) {
+		source, err := m.GetRemoteSourceByProvider("dark", "bing")
+		require.NoError(t, err)
+		require.NotNil(t, source)
+		assert.Equal(t, "bing", source.ProviderName())
+		assert.Equal(t, "dark-bing", source.ID())
+	})
+
+	t.Run("finds wallhaven provider for dark theme", func(t *testing.T) {
+		source, err := m.GetRemoteSourceByProvider("dark", "wallhaven")
+		require.NoError(t, err)
+		require.NotNil(t, source)
+		assert.Equal(t, "wallhaven", source.ProviderName())
+	})
+
+	t.Run("finds unsplash provider for light theme", func(t *testing.T) {
+		source, err := m.GetRemoteSourceByProvider("light", "unsplash")
+		require.NoError(t, err)
+		require.NotNil(t, source)
+		assert.Equal(t, "unsplash", source.ProviderName())
+	})
+
+	t.Run("not found - wrong theme", func(t *testing.T) {
+		source, err := m.GetRemoteSourceByProvider("light", "bing")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+		assert.Nil(t, source)
+	})
+
+	t.Run("not found - nonexistent provider", func(t *testing.T) {
+		source, err := m.GetRemoteSourceByProvider("dark", "nonexistent")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+		assert.Nil(t, source)
+	})
+}
+
 func TestManager_GetLocalSourceByID(t *testing.T) {
 	m := NewManager("/upload", "/temp")
 

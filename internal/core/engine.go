@@ -21,10 +21,10 @@ type Engine struct {
 	platform platform.Platform
 	manager  *datasource.Manager
 
-	themeOverride  string
-	sourceOverride string
-	queryOverride  string
-	dryRun         bool
+	themeOverride    string
+	providerOverride string
+	queryOverride    string
+	dryRun           bool
 }
 
 type Option func(*Engine)
@@ -33,8 +33,8 @@ func WithThemeOverride(theme string) Option {
 	return func(e *Engine) { e.themeOverride = theme }
 }
 
-func WithSourceOverride(source string) Option {
-	return func(e *Engine) { e.sourceOverride = source }
+func WithProviderOverride(provider string) Option {
+	return func(e *Engine) { e.providerOverride = provider }
 }
 
 func WithDryRun(dryRun bool) Option {
@@ -143,8 +143,8 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 	var isTemp bool
 	var err error
 
-	if e.sourceOverride != "" {
-		img, isTemp, err = e.pickFromSource(ctx, e.sourceOverride)
+	if e.providerOverride != "" {
+		img, isTemp, err = e.pickFromProvider(ctx, themeName, e.providerOverride)
 	} else if e.queryOverride != "" {
 		img, isTemp, err = e.pickFromRemote(ctx, themeName)
 	} else {
@@ -224,26 +224,50 @@ func (e *Engine) pickNext(ctx context.Context, theme string) (*datasource.Image,
 	return img, false, nil
 }
 
-func (e *Engine) pickFromSource(ctx context.Context, sourceID string) (*datasource.Image, bool, error) {
-	// Try remote source first
-	if remote, err := e.manager.GetRemoteSourceByID(sourceID); err == nil {
-		img, err := remote.FetchRandom(ctx, e.queryOverride)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to fetch from remote: %w", err)
-		}
-		return img, true, nil
-	}
-
-	// Try local source
-	if _, err := e.manager.GetLocalSourceByID(sourceID); err == nil {
-		img, err := e.manager.PickRandomFromLocalSource(ctx, sourceID, e.state.History)
+func (e *Engine) pickFromProvider(ctx context.Context, theme, providerName string) (*datasource.Image, bool, error) {
+	// Handle "local" provider specially
+	if providerName == "local" {
+		img, err := e.manager.PickRandomLocal(ctx, theme, e.state.History)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to pick from local: %w", err)
 		}
 		return img, false, nil
 	}
 
-	return nil, false, fmt.Errorf("source not found: %s", sourceID)
+	// Try to find existing source for this provider
+	img, err := e.manager.FetchFromProvider(ctx, theme, providerName, e.queryOverride)
+	if err == nil {
+		return img, true, nil
+	}
+
+	// Provider not in manager - try to create it on-the-fly
+	// This allows --provider bing to work even if bing is not in config
+	themeMode := e.detectTheme().ToConfigMode()
+	uploadDir := e.config.GetUploadDir(themeMode)
+	tempDir := config.GetTempDir()
+
+	// Get auth from config if provider exists there, otherwise empty (works for bing)
+	var auth string
+	if providerCfg, exists := e.config.Providers[providerName]; exists {
+		auth = providerCfg.Auth
+	}
+
+	// Create temporary source for this request
+	source := datasource.NewRemoteSource(
+		fmt.Sprintf("%s-%s", theme, providerName),
+		providerName,
+		auth,
+		theme,
+		uploadDir,
+		tempDir,
+		e.config.GetQueries(themeMode),
+	)
+
+	img, err = source.FetchRandom(ctx, e.queryOverride)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to fetch from %s: %w", providerName, err)
+	}
+	return img, true, nil
 }
 
 func (e *Engine) pickFromRemote(ctx context.Context, theme string) (*datasource.Image, bool, error) {

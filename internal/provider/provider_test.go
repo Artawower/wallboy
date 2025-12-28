@@ -35,6 +35,11 @@ func TestNewProvider(t *testing.T) {
 			wantName:     "wallhaven",
 		},
 		{
+			name:         "bing",
+			providerType: "bing",
+			wantName:     "bing",
+		},
+		{
 			name:         "generic",
 			providerType: "generic",
 			urls:         []string{"http://example.com/img.jpg"},
@@ -353,6 +358,124 @@ func TestWallhavenProvider_Download(t *testing.T) {
 		meta.DownloadURL = server.URL + "/image"
 		path, err := p.Download(context.Background(), meta, tmpDir)
 		require.NoError(t, err)
+		assert.Contains(t, path, ".jpg")
+	})
+}
+
+// --- Bing Provider Tests ---
+
+func TestNewBingProvider(t *testing.T) {
+	p := NewBingProvider()
+	assert.Equal(t, "bing", p.Name())
+	assert.Equal(t, "https://bing.biturl.top", p.baseURL)
+}
+
+func TestBingProvider_Search(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Check query parameters
+		assert.Contains(t, r.URL.RawQuery, "format=json")
+		assert.Contains(t, r.URL.RawQuery, "resolution=UHD")
+
+		response := map[string]interface{}{
+			"start_date":     "20241228",
+			"end_date":       "20241229",
+			"url":            "https://www.bing.com/th?id=OHR.TestImage_EN-US123.jpg&rf=LaDigue_UHD.jpg",
+			"copyright":      "Test Image (© Test Photographer)",
+			"copyright_link": "https://www.bing.com/search?q=test",
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	p := NewBingProvider()
+	p.baseURL = server.URL
+
+	// Bing ignores queries, but we call Search with queries anyway
+	images, err := p.Search(context.Background(), []string{"ignored query"})
+	require.NoError(t, err)
+	// Should return multiple images (from indices 0-7 + random)
+	assert.NotEmpty(t, images)
+
+	// Check first image
+	assert.Equal(t, "20241228", images[0].ID)
+	assert.Contains(t, images[0].URL, "bing.com")
+	assert.Equal(t, "bing", images[0].Source)
+	assert.Contains(t, images[0].Author, "Test")
+}
+
+func TestBingProvider_Search_EmptyQueries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"start_date": "20241228",
+			"url":        "https://www.bing.com/th?id=test.jpg",
+			"copyright":  "Test",
+		}
+		_ = json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	p := NewBingProvider()
+	p.baseURL = server.URL
+
+	// Bing works without queries
+	images, err := p.Search(context.Background(), nil)
+	require.NoError(t, err)
+	assert.NotEmpty(t, images)
+}
+
+func TestBingProvider_Search_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	p := NewBingProvider()
+	p.baseURL = server.URL
+
+	// Should return empty results on error (continues through indices)
+	images, err := p.Search(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Empty(t, images)
+}
+
+func TestBingProvider_Download(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("bing image bytes"))
+	}))
+	defer server.Close()
+
+	p := NewBingProvider()
+
+	meta := ImageMeta{
+		ID:          "20241228",
+		DownloadURL: server.URL + "/image.jpg",
+	}
+
+	t.Run("to directory", func(t *testing.T) {
+		path, err := p.Download(context.Background(), meta, tmpDir)
+		require.NoError(t, err)
+		assert.Contains(t, path, "bing_20241228.jpg")
+
+		// Verify file exists and has content
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, "bing image bytes", string(data))
+	})
+
+	t.Run("to specific file", func(t *testing.T) {
+		dest := filepath.Join(tmpDir, "specific_bing.jpg")
+		path, err := p.Download(context.Background(), meta, dest)
+		require.NoError(t, err)
+		assert.Equal(t, dest, path)
+	})
+
+	t.Run("handles long/invalid extensions", func(t *testing.T) {
+		meta.DownloadURL = server.URL + "/image.jpg?rf=LaDigue_UHD.jpg&pid=hp"
+		path, err := p.Download(context.Background(), meta, tmpDir)
+		require.NoError(t, err)
+		// Should default to .jpg when extension is too long (query params)
 		assert.Contains(t, path, ".jpg")
 	})
 }

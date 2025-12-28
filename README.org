@@ -12,7 +12,7 @@ Features
 
 - Automatic theme detection (light/dark) from macOS system settings
 - Local and remote image sources
-- Providers: Unsplash, Wallhaven, Generic URL
+- Providers: Unsplash, Wallhaven, Bing Daily, Generic URL
 - Temporary downloads for preview, save what you like
 - Dominant color analysis (k-means clustering)
 - Modern CLI with colored output
@@ -71,14 +71,14 @@ wallboy colors
 
 ** Flags
 
-| Flag            | Description                          |
-|-----------------+--------------------------------------|
-| =--config=      | Path to config file                  |
-| =--theme=       | Override theme (auto/light/dark)     |
-| =--source=      | Use specific datasource              |
-| =--dry-run=     | Show what would be done              |
-| =-v, --verbose= | Verbose output                       |
-| =-q, --quiet=   | Minimal output                       |
+| Flag            | Description                                       |
+|-----------------+---------------------------------------------------|
+| =--config=      | Path to config file                               |
+| =--theme=       | Override theme (auto/light/dark)                  |
+| =--provider=    | Use specific provider (bing/wallhaven/unsplash/local) |
+| =--dry-run=     | Show what would be done                           |
+| =-v, --verbose= | Verbose output                                    |
+| =-q, --quiet=   | Minimal output                                    |
 
 ** Workflow
 
@@ -230,6 +230,33 @@ Example queries for Wallhaven:
 auth = "${UNSPLASH_ACCESS_KEY}"
 #+end_src
 
+*** Bing Daily Wallpaper
+
+[[https://www.bing.com][Bing]] provides a new high-quality wallpaper every day. No API key required!
+
+#+begin_src toml
+[providers.bing]
+# No auth required!
+#+end_src
+
+Features:
+- Automatically fetches Bing's daily wallpaper (UHD resolution)
+- Access to the last 8 days of wallpapers
+- No queries needed - ignores search queries and uses Bing's curated daily images
+- Perfect for a "set and forget" wallpaper source
+
+Example config using only Bing:
+
+#+begin_src toml
+[providers.bing]
+
+[dark]
+dirs = ["~/Pictures/Wallpapers/Dark"]
+upload-dir = "~/Pictures/Wallpapers/Dark"
+providers = ["bing"]  # only use bing
+# No queries needed for bing!
+#+end_src
+
 *** Environment Variables
 
 The =auth= field supports environment variables:
@@ -296,6 +323,22 @@ wallboy next --theme dark
 
 # Use light theme
 wallboy next --theme light
+#+end_src
+
+*** Use Specific Provider
+
+#+begin_src bash
+# Get wallpaper only from Bing
+wallboy next --provider bing
+
+# Get wallpaper only from Wallhaven
+wallboy next --provider wallhaven
+
+# Get wallpaper only from local directories
+wallboy next --provider local
+
+# Combine with theme
+wallboy next --theme dark --provider bing
 #+end_src
 
 *** Analyze Colors

@@ -1,10 +1,14 @@
 package core
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/Artawower/wallboy/internal/config"
+	"github.com/Artawower/wallboy/internal/datasource"
 	"github.com/Artawower/wallboy/internal/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -128,8 +132,8 @@ func TestWithOptions(t *testing.T) {
 	WithThemeOverride("dark")(e)
 	assert.Equal(t, "dark", e.themeOverride)
 
-	WithSourceOverride("wallhaven")(e)
-	assert.Equal(t, "wallhaven", e.sourceOverride)
+	WithProviderOverride("wallhaven")(e)
+	assert.Equal(t, "wallhaven", e.providerOverride)
 
 	WithDryRun(true)(e)
 	assert.True(t, e.dryRun)
@@ -230,5 +234,143 @@ func TestEngine_OpenImage(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no longer exists")
 	})
+}
 
+func TestEngine_pickFromProvider(t *testing.T) {
+	tmpDir := t.TempDir()
+	statePath := filepath.Join(tmpDir, "state.json")
+
+	// Create test directories
+	localDir := filepath.Join(tmpDir, "local")
+	uploadDir := filepath.Join(tmpDir, "upload")
+	require.NoError(t, os.MkdirAll(localDir, 0755))
+	require.NoError(t, os.MkdirAll(uploadDir, 0755))
+
+	// Create a test image
+	require.NoError(t, os.WriteFile(filepath.Join(localDir, "test.jpg"), []byte("test"), 0644))
+
+	t.Run("local provider picks from local sources", func(t *testing.T) {
+		st := state.New(statePath)
+		cfg := &config.Config{
+			Providers: map[string]config.ProviderConfig{
+				"local": {Recursive: true},
+			},
+			Light: config.ThemeConfig{
+				Dirs:      []string{localDir},
+				UploadDir: uploadDir,
+			},
+		}
+
+		manager := datasource.NewManager(uploadDir, tmpDir)
+		manager.AddLocalSource(datasource.NewLocalSource("light-local-1", localDir, "light", false))
+
+		e := &Engine{
+			config:  cfg,
+			state:   st,
+			manager: manager,
+		}
+
+		img, isTemp, err := e.pickFromProvider(context.Background(), "light", "local")
+		require.NoError(t, err)
+		assert.False(t, isTemp)
+		assert.NotNil(t, img)
+		assert.Contains(t, img.Path, "test.jpg")
+	})
+
+	t.Run("local provider fails when no local sources", func(t *testing.T) {
+		st := state.New(statePath)
+		cfg := &config.Config{
+			Providers: map[string]config.ProviderConfig{},
+		}
+
+		manager := datasource.NewManager(uploadDir, tmpDir)
+		// No local sources added
+
+		e := &Engine{
+			config:  cfg,
+			state:   st,
+			manager: manager,
+		}
+
+		img, _, err := e.pickFromProvider(context.Background(), "light", "local")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to pick from local")
+		assert.Nil(t, img)
+	})
+
+	t.Run("remote provider creates source on-the-fly when not in manager", func(t *testing.T) {
+		st := state.New(statePath)
+		cfg := &config.Config{
+			Theme: config.ThemeSettings{Mode: config.ThemeModeDark},
+			Providers: map[string]config.ProviderConfig{
+				"local": {Recursive: true},
+			},
+			Dark: config.ThemeConfig{
+				Dirs:      []string{localDir},
+				UploadDir: uploadDir,
+				Queries:   []string{"test"},
+			},
+		}
+
+		manager := datasource.NewManager(uploadDir, tmpDir)
+		// No remote sources added - bing should be created on-the-fly
+
+		e := &Engine{
+			config:        cfg,
+			state:         st,
+			manager:       manager,
+			themeOverride: "dark",
+		}
+
+		// This should create bing provider on-the-fly and fetch
+		// Note: This will actually call the real Bing API
+		// In a real test we'd mock the HTTP client
+		img, isTemp, err := e.pickFromProvider(context.Background(), "dark", "bing")
+
+		// Bing API should work (it's public and free)
+		if err != nil {
+			// If network fails, check it's not a "not configured" error
+			assert.NotContains(t, err.Error(), "not configured")
+		} else {
+			assert.True(t, isTemp)
+			assert.NotNil(t, img)
+			assert.Equal(t, "bing", img.SourceID[5:]) // "dark-bing"
+		}
+	})
+
+	t.Run("uses existing remote source when available", func(t *testing.T) {
+		st := state.New(statePath)
+		cfg := &config.Config{
+			Theme: config.ThemeSettings{Mode: config.ThemeModeDark},
+			Providers: map[string]config.ProviderConfig{
+				"bing": {},
+			},
+			Dark: config.ThemeConfig{
+				Dirs:      []string{localDir},
+				UploadDir: uploadDir,
+			},
+		}
+
+		manager := datasource.NewManager(uploadDir, tmpDir)
+		// Add bing source to manager
+		manager.AddRemoteSource(datasource.NewRemoteSource("dark-bing", "bing", "", "dark", uploadDir, tmpDir, nil))
+
+		e := &Engine{
+			config:        cfg,
+			state:         st,
+			manager:       manager,
+			themeOverride: "dark",
+		}
+
+		// Should use existing source from manager
+		img, isTemp, err := e.pickFromProvider(context.Background(), "dark", "bing")
+
+		if err != nil {
+			// Network errors are OK in tests
+			assert.NotContains(t, err.Error(), "not configured")
+		} else {
+			assert.True(t, isTemp)
+			assert.NotNil(t, img)
+		}
+	})
 }

@@ -25,6 +25,7 @@ type ProviderType string
 const (
 	ProviderUnsplash  ProviderType = "unsplash"
 	ProviderWallhaven ProviderType = "wallhaven"
+	ProviderBing      ProviderType = "bing"
 	ProviderLocal     ProviderType = "local"
 )
 
@@ -171,7 +172,8 @@ func (c *Config) Validate() error {
 		if !isValidProvider(name) {
 			return fmt.Errorf("unknown provider: %s", name)
 		}
-		if p.Auth == "" {
+		// Bing doesn't require auth
+		if name != "bing" && p.Auth == "" {
 			return fmt.Errorf("provider %s: auth is required", name)
 		}
 	}
@@ -194,14 +196,18 @@ func (c *Config) validateThemeProviders(themeName string, theme *ThemeConfig) er
 		}
 	}
 
-	// Check if theme has remote providers configured
+	// Check if theme has remote providers configured (excluding bing for query requirements)
 	hasRemote := false
+	hasQueryBasedRemote := false // Remote providers that need queries (not bing)
+
 	if len(theme.Providers) == 0 {
 		// No restriction - check if any remote provider exists
 		for name := range c.Providers {
 			if name != "local" {
 				hasRemote = true
-				break
+				if name != "bing" {
+					hasQueryBasedRemote = true
+				}
 			}
 		}
 	} else {
@@ -209,16 +215,22 @@ func (c *Config) validateThemeProviders(themeName string, theme *ThemeConfig) er
 		for _, p := range theme.Providers {
 			if p != "local" {
 				hasRemote = true
-				break
+				if p != "bing" {
+					hasQueryBasedRemote = true
+				}
 			}
 		}
 	}
 
-	// Validate upload-dir and queries when remote providers are used
+	// Validate upload-dir when remote providers are used
 	if hasRemote {
 		if theme.UploadDir == "" {
 			return fmt.Errorf("%s: upload-dir is required when using remote providers", themeName)
 		}
+	}
+
+	// Validate queries when query-based remote providers are used (not bing)
+	if hasQueryBasedRemote {
 		if len(theme.Queries) == 0 {
 			return fmt.Errorf("%s: queries are required when using remote providers", themeName)
 		}
@@ -229,7 +241,7 @@ func (c *Config) validateThemeProviders(themeName string, theme *ThemeConfig) er
 
 func isValidProvider(name string) bool {
 	switch ProviderType(name) {
-	case ProviderUnsplash, ProviderWallhaven, ProviderLocal:
+	case ProviderUnsplash, ProviderWallhaven, ProviderBing, ProviderLocal:
 		return true
 	}
 	return false

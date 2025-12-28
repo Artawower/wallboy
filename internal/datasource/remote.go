@@ -51,6 +51,14 @@ func (s *RemoteSource) Description() string {
 	return "remote"
 }
 
+// ProviderName returns the name of the provider (e.g., "bing", "wallhaven").
+func (s *RemoteSource) ProviderName() string {
+	if s.provider != nil {
+		return s.provider.Name()
+	}
+	return ""
+}
+
 // ListImages returns all saved images from the upload directory.
 func (s *RemoteSource) ListImages(ctx context.Context) ([]Image, error) {
 	var images []Image

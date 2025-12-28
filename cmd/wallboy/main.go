@@ -32,12 +32,12 @@ const (
 
 var (
 	// Global flags
-	cfgFile    string
-	themeFlag  string
-	sourceFlag string
-	dryRun     bool
-	verbose    bool
-	quiet      bool
+	cfgFile      string
+	themeFlag    string
+	providerFlag string
+	dryRun       bool
+	verbose      bool
+	quiet        bool
 
 	// Global output
 	out *ui.Output
@@ -55,7 +55,7 @@ and provides additional features like color analysis.`,
 	// Persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/wallboy/config.toml)")
 	rootCmd.PersistentFlags().StringVar(&themeFlag, "theme", "", "theme to use (auto|light|dark)")
-	rootCmd.PersistentFlags().StringVar(&sourceFlag, "source", "", "specific datasource to use")
+	rootCmd.PersistentFlags().StringVar(&providerFlag, "provider", "", "use specific provider (bing, wallhaven, unsplash, local)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "show what would be done without doing it")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "suppress non-error output")
@@ -111,8 +111,8 @@ func newEngineWithQuery(query string) (*core.Engine, error) {
 	if themeFlag != "" {
 		opts = append(opts, core.WithThemeOverride(themeFlag))
 	}
-	if sourceFlag != "" {
-		opts = append(opts, core.WithSourceOverride(sourceFlag))
+	if providerFlag != "" {
+		opts = append(opts, core.WithProviderOverride(providerFlag))
 	}
 	if dryRun {
 		opts = append(opts, core.WithDryRun(true))

@@ -283,6 +283,25 @@ func (m *Manager) PickRandomFromLocalSource(ctx context.Context, sourceID string
 	return &filtered[idx], nil
 }
 
+// GetRemoteSourceByProvider returns a remote source by provider name for a theme.
+func (m *Manager) GetRemoteSourceByProvider(theme, providerName string) (*RemoteSource, error) {
+	for _, s := range m.remoteSources {
+		if s.theme == theme && s.ProviderName() == providerName {
+			return s, nil
+		}
+	}
+	return nil, fmt.Errorf("remote source not found for provider: %s", providerName)
+}
+
+// FetchFromProvider fetches a random image from a specific provider.
+func (m *Manager) FetchFromProvider(ctx context.Context, theme, providerName, queryOverride string) (*Image, error) {
+	source, err := m.GetRemoteSourceByProvider(theme, providerName)
+	if err != nil {
+		return nil, err
+	}
+	return source.FetchRandom(ctx, queryOverride)
+}
+
 // FetchRandomRemote fetches a random image from remote sources.
 func (m *Manager) FetchRandomRemote(ctx context.Context, theme, queryOverride string) (*Image, error) {
 	sources := m.GetRemoteSources(theme)
