@@ -15,65 +15,46 @@ import (
 	"github.com/Artawower/wallboy/internal/state"
 )
 
-// Engine is the main wallpaper management engine.
 type Engine struct {
 	config   *config.Config
 	state    *state.State
 	platform platform.Platform
 	manager  *datasource.Manager
 
-	// Options
 	themeOverride  string
 	sourceOverride string
 	queryOverride  string
 	dryRun         bool
 }
 
-// Option is a function that configures the Engine.
 type Option func(*Engine)
 
-// WithThemeOverride sets a theme override.
 func WithThemeOverride(theme string) Option {
-	return func(e *Engine) {
-		e.themeOverride = theme
-	}
+	return func(e *Engine) { e.themeOverride = theme }
 }
 
-// WithSourceOverride sets a source override.
 func WithSourceOverride(source string) Option {
-	return func(e *Engine) {
-		e.sourceOverride = source
-	}
+	return func(e *Engine) { e.sourceOverride = source }
 }
 
-// WithDryRun enables dry-run mode.
 func WithDryRun(dryRun bool) Option {
-	return func(e *Engine) {
-		e.dryRun = dryRun
-	}
+	return func(e *Engine) { e.dryRun = dryRun }
 }
 
-// WithQueryOverride sets a query override for remote sources.
 func WithQueryOverride(query string) Option {
-	return func(e *Engine) {
-		e.queryOverride = query
-	}
+	return func(e *Engine) { e.queryOverride = query }
 }
 
-// New creates a new Engine instance.
 func New(configPath string, opts ...Option) (*Engine, error) {
-	// Load config
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Ensure directories exist
 	if err := cfg.EnsureDirectories(); err != nil {
 		return nil, fmt.Errorf("failed to create directories: %w", err)
 	}
 
-	// Load state
 	st, err := state.Load(cfg.State.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load state: %w", err)
@@ -85,57 +66,39 @@ func New(configPath string, opts ...Option) (*Engine, error) {
 		platform: platform.Current(),
 	}
 
-	// Apply options
 	for _, opt := range opts {
 		opt(e)
 	}
 
-	// Initialize datasource manager
-	if err := e.initManager(); err != nil {
-		return nil, err
-	}
+	e.initManager()
 
 	return e, nil
 }
 
-// initManager initializes the datasource manager.
-func (e *Engine) initManager() error {
-	currentTheme := e.detectTheme()
-	uploadDir := e.config.GetUploadDir(currentTheme.ToConfigMode())
+func (e *Engine) initManager() {
+	theme := e.detectTheme()
+	themeMode := theme.ToConfigMode()
+	uploadDir := e.config.GetUploadDir(themeMode)
 	tempDir := config.GetTempDir()
+
 	e.manager = datasource.NewManager(uploadDir, tempDir)
 
-	if e.sourceOverride != "" {
-		// Add only the specified source
-		ds, dsTheme, err := e.config.FindDatasource(e.sourceOverride)
-		if err != nil {
-			return fmt.Errorf("datasource not found: %s", e.sourceOverride)
-		}
-		e.addDatasource(ds, string(dsTheme), e.config.GetUploadDir(dsTheme), tempDir)
-	} else {
-		// Add all datasources for current theme
-		themeConfig := e.config.GetThemeConfig(currentTheme.ToConfigMode())
-		for _, ds := range themeConfig.Datasources {
-			e.addDatasource(&ds, string(currentTheme), uploadDir, tempDir)
-		}
+	localConfig := e.config.GetLocalConfig()
+	for i, dir := range e.config.GetLocalDirs(themeMode) {
+		id := fmt.Sprintf("%s-local-%d", theme, i+1)
+		source := datasource.NewLocalSource(id, dir, string(theme), localConfig.Recursive)
+		e.manager.AddLocalSource(source)
 	}
 
-	return nil
-}
-
-// addDatasource adds a datasource to the manager.
-func (e *Engine) addDatasource(ds *config.Datasource, themeName, uploadDir, tempDir string) {
-	switch ds.Type {
-	case config.DatasourceTypeLocal:
-		e.manager.AddSource(datasource.NewLocalSource(*ds, themeName))
-	case config.DatasourceTypeRemote:
-		e.manager.AddSource(datasource.NewRemoteSource(*ds, themeName, uploadDir, tempDir))
+	queries := e.config.GetQueries(themeMode)
+	for name, providerCfg := range e.config.GetRemoteProviders(themeMode) {
+		id := fmt.Sprintf("%s-%s", theme, name)
+		source := datasource.NewRemoteSource(id, name, providerCfg.Auth, string(theme), uploadDir, tempDir, queries)
+		e.manager.AddRemoteSource(source)
 	}
 }
 
-// detectTheme detects the current theme.
 func (e *Engine) detectTheme() Theme {
-	// Check for override
 	if e.themeOverride != "" {
 		switch e.themeOverride {
 		case "light":
@@ -145,7 +108,6 @@ func (e *Engine) detectTheme() Theme {
 		}
 	}
 
-	// Check config mode
 	switch e.config.Theme.Mode {
 	case config.ThemeModeLight:
 		return ThemeLight
@@ -158,7 +120,6 @@ func (e *Engine) detectTheme() Theme {
 	}
 }
 
-// ToConfigMode converts Theme to config.ThemeMode.
 func (t Theme) ToConfigMode() config.ThemeMode {
 	switch t {
 	case ThemeLight:
@@ -170,11 +131,10 @@ func (t Theme) ToConfigMode() config.ThemeMode {
 	}
 }
 
-// Next sets the next random wallpaper.
 func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 	currentTheme := e.detectTheme()
+	themeName := string(currentTheme)
 
-	// Clean up previous temp file if it was temporary
 	if e.state.HasCurrent() && e.state.IsTempWallpaper() {
 		os.Remove(e.state.Current.Path)
 	}
@@ -183,15 +143,14 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 	var isTemp bool
 	var err error
 
-	// Pick image based on whether source was specified
 	if e.sourceOverride != "" {
-		img, isTemp, err = e.pickNextImageFromSource(ctx, e.sourceOverride)
+		img, isTemp, err = e.pickFromSource(ctx, e.sourceOverride)
 	} else if e.queryOverride != "" {
-		// Query without source - use random remote source
-		img, isTemp, err = e.pickFromRandomRemote(ctx, string(currentTheme))
+		img, isTemp, err = e.pickFromRemote(ctx, themeName)
 	} else {
-		img, isTemp, err = e.pickNextImage(ctx, string(currentTheme))
+		img, isTemp, err = e.pickNext(ctx, themeName)
 	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -206,17 +165,12 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 		}, nil
 	}
 
-	// Set wallpaper
 	if err := e.platform.Wallpaper().Set(img.Path); err != nil {
 		return nil, fmt.Errorf("failed to set wallpaper: %w", err)
 	}
 
-	// Update state
 	e.state.SetCurrent(img.Path, img.SourceID, img.Theme, isTemp)
-	if err := e.state.Save(); err != nil {
-		// Non-fatal error
-		_ = err
-	}
+	_ = e.state.Save()
 
 	return &WallpaperResult{
 		Path:     img.Path,
@@ -227,24 +181,28 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 	}, nil
 }
 
-// pickNextImage picks the next image from available sources.
-func (e *Engine) pickNextImage(ctx context.Context, themeName string) (*datasource.Image, bool, error) {
-	sources := e.manager.GetSourcesByTheme(themeName)
-	if len(sources) == 0 {
-		return nil, false, fmt.Errorf("no datasources available")
+func (e *Engine) pickNext(ctx context.Context, theme string) (*datasource.Image, bool, error) {
+	hasLocal := e.manager.HasLocalSources(theme)
+	hasRemote := e.manager.HasRemoteSources(theme)
+
+	if !hasLocal && !hasRemote {
+		return nil, false, fmt.Errorf("no sources available for theme: %s", theme)
 	}
 
-	localSources, remoteSources := e.separateSources(sources)
-
-	useRemote := e.shouldUseRemote(localSources, remoteSources)
+	useRemote := false
+	if hasLocal && hasRemote {
+		useRemote = rand.Intn(2) == 0
+	} else if hasRemote {
+		useRemote = true
+	}
 
 	if useRemote {
-		img, err := e.tryRemoteSources(ctx, remoteSources)
+		img, err := e.manager.FetchRandomRemote(ctx, theme, e.queryOverride)
 		if err == nil {
 			return img, true, nil
 		}
-		if len(localSources) > 0 {
-			img, err := e.manager.PickRandom(ctx, themeName, e.state.History)
+		if hasLocal {
+			img, err := e.manager.PickRandomLocal(ctx, theme, e.state.History)
 			if err == nil {
 				return img, false, nil
 			}
@@ -252,11 +210,13 @@ func (e *Engine) pickNextImage(ctx context.Context, themeName string) (*datasour
 		return nil, false, fmt.Errorf("failed to fetch from remote: %w", err)
 	}
 
-	img, err := e.manager.PickRandom(ctx, themeName, e.state.History)
+	img, err := e.manager.PickRandomLocal(ctx, theme, e.state.History)
 	if err != nil {
-		img, remoteErr := e.tryRemoteSources(ctx, remoteSources)
-		if remoteErr == nil {
-			return img, true, nil
+		if hasRemote {
+			img, err := e.manager.FetchRandomRemote(ctx, theme, e.queryOverride)
+			if err == nil {
+				return img, true, nil
+			}
 		}
 		return nil, false, fmt.Errorf("failed to pick image: %w", err)
 	}
@@ -264,74 +224,40 @@ func (e *Engine) pickNextImage(ctx context.Context, themeName string) (*datasour
 	return img, false, nil
 }
 
-func (e *Engine) separateSources(sources []datasource.Source) ([]datasource.Source, []*datasource.RemoteSource) {
-	var localSources []datasource.Source
-	var remoteSources []*datasource.RemoteSource
-	for _, s := range sources {
-		if s.Type() == config.DatasourceTypeLocal {
-			localSources = append(localSources, s)
-		} else if remote, ok := s.(*datasource.RemoteSource); ok {
-			remoteSources = append(remoteSources, remote)
-		}
-	}
-	return localSources, remoteSources
-}
-
-func (e *Engine) shouldUseRemote(localSources []datasource.Source, remoteSources []*datasource.RemoteSource) bool {
-	if len(localSources) > 0 && len(remoteSources) > 0 {
-		return rand.Intn(2) == 0
-	}
-	return len(remoteSources) > 0
-}
-
-func (e *Engine) tryRemoteSources(ctx context.Context, remoteSources []*datasource.RemoteSource) (*datasource.Image, error) {
-	if len(remoteSources) == 0 {
-		return nil, fmt.Errorf("no remote sources available")
-	}
-
-	shuffled := make([]*datasource.RemoteSource, len(remoteSources))
-	copy(shuffled, remoteSources)
-	rand.Shuffle(len(shuffled), func(i, j int) {
-		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-	})
-
-	var lastErr error
-	for _, remote := range shuffled {
+func (e *Engine) pickFromSource(ctx context.Context, sourceID string) (*datasource.Image, bool, error) {
+	// Try remote source first
+	if remote, err := e.manager.GetRemoteSourceByID(sourceID); err == nil {
 		img, err := remote.FetchRandom(ctx, e.queryOverride)
-		if err == nil {
-			return img, nil
-		}
-		lastErr = err
-	}
-	return nil, lastErr
-}
-
-// pickNextImageFromSource picks an image from a specific source.
-func (e *Engine) pickNextImageFromSource(ctx context.Context, sourceID string) (*datasource.Image, bool, error) {
-	source, err := e.manager.GetSourceByID(sourceID)
-	if err != nil {
-		return nil, false, fmt.Errorf("source not found: %s", sourceID)
-	}
-
-	// Remote: always fetch new
-	if source.Type() == config.DatasourceTypeRemote {
-		img, err := e.manager.FetchRandomFromRemote(ctx, sourceID, e.queryOverride)
 		if err != nil {
 			return nil, false, fmt.Errorf("failed to fetch from remote: %w", err)
 		}
 		return img, true, nil
 	}
 
-	// Local: pick from existing
-	img, err := e.manager.PickRandomFromSource(ctx, sourceID, e.state.History)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to pick image: %w", err)
+	// Try local source
+	if _, err := e.manager.GetLocalSourceByID(sourceID); err == nil {
+		img, err := e.manager.PickRandomFromLocalSource(ctx, sourceID, e.state.History)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to pick from local: %w", err)
+		}
+		return img, false, nil
 	}
 
-	return img, false, nil
+	return nil, false, fmt.Errorf("source not found: %s", sourceID)
 }
 
-// Save saves the current wallpaper permanently.
+func (e *Engine) pickFromRemote(ctx context.Context, theme string) (*datasource.Image, bool, error) {
+	if !e.manager.HasRemoteSources(theme) {
+		return e.pickNext(ctx, theme)
+	}
+
+	img, err := e.manager.FetchRandomRemote(ctx, theme, e.queryOverride)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to fetch from remote: %w", err)
+	}
+	return img, true, nil
+}
+
 func (e *Engine) Save() (*WallpaperResult, error) {
 	if !e.state.HasCurrent() {
 		return nil, fmt.Errorf("no wallpaper currently set")
@@ -347,8 +273,7 @@ func (e *Engine) Save() (*WallpaperResult, error) {
 		}, nil
 	}
 
-	// Get the remote source to save through
-	remote, err := e.manager.GetRemoteSource(e.state.Current.SourceID)
+	remote, err := e.manager.GetRemoteSourceByID(e.state.Current.SourceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get source: %w", err)
 	}
@@ -363,17 +288,13 @@ func (e *Engine) Save() (*WallpaperResult, error) {
 		}, nil
 	}
 
-	// Save the image
 	newPath, err := remote.Save(e.state.Current.Path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save wallpaper: %w", err)
 	}
 
-	// Update state
 	e.state.MarkSaved(newPath)
-	if err := e.state.Save(); err != nil {
-		_ = err
-	}
+	_ = e.state.Save()
 
 	return &WallpaperResult{
 		Path:     newPath,
@@ -384,45 +305,32 @@ func (e *Engine) Save() (*WallpaperResult, error) {
 	}, nil
 }
 
-// Delete deletes the current wallpaper and sets the next one.
 func (e *Engine) Delete(ctx context.Context) (*WallpaperResult, error) {
 	if !e.state.HasCurrent() {
 		return nil, fmt.Errorf("no wallpaper currently set")
 	}
 
 	currentPath := e.state.Current.Path
-	currentSource := e.state.Current.SourceID
 
-	// Check if we should delete (only remote/temp files, not local sources)
-	shouldDelete := false
-	source, err := e.manager.GetSourceByID(currentSource)
-	if err == nil && source.Type() == config.DatasourceTypeRemote {
-		shouldDelete = true
-	}
-	if e.state.IsTempWallpaper() {
-		shouldDelete = true
-	}
+	shouldDelete := e.state.IsTempWallpaper()
 
 	if e.dryRun {
 		return &WallpaperResult{
 			Path:     currentPath,
 			Theme:    e.state.Current.Theme,
-			SourceID: currentSource,
+			SourceID: e.state.Current.SourceID,
 			IsTemp:   e.state.IsTempWallpaper(),
 			SetAt:    e.state.Current.SetAt,
 		}, nil
 	}
 
-	// Delete file if from remote/temp
 	if shouldDelete {
 		os.Remove(currentPath)
 	}
 
-	// Set next wallpaper
 	return e.Next(ctx)
 }
 
-// Info returns information about the current wallpaper.
 func (e *Engine) Info() (*WallpaperInfo, error) {
 	if !e.state.HasCurrent() {
 		return nil, fmt.Errorf("no wallpaper currently set")
@@ -441,7 +349,6 @@ func (e *Engine) Info() (*WallpaperInfo, error) {
 	}, nil
 }
 
-// AnalyzeColors analyzes the colors in the current wallpaper.
 func (e *Engine) AnalyzeColors(topN int) ([]Color, error) {
 	if !e.state.HasCurrent() {
 		return nil, fmt.Errorf("no wallpaper currently set")
@@ -464,31 +371,32 @@ func (e *Engine) AnalyzeColors(topN int) ([]Color, error) {
 	return coreColors, nil
 }
 
-// ListSources returns all available datasources.
 func (e *Engine) ListSources() []SourceInfo {
-	allSources := e.config.GetAllDatasources()
-	result := make([]SourceInfo, len(allSources))
+	theme := e.detectTheme()
+	themeName := string(theme)
+	var result []SourceInfo
 
-	for i, s := range allSources {
-		desc := ""
-		if s.Datasource.Type == config.DatasourceTypeLocal {
-			desc = s.Datasource.Dir
-		} else {
-			desc = string(s.Datasource.Provider)
-		}
+	for _, s := range e.manager.GetLocalSources(themeName) {
+		result = append(result, SourceInfo{
+			ID:          s.ID(),
+			Theme:       themeName,
+			Type:        "local",
+			Description: s.Description(),
+		})
+	}
 
-		result[i] = SourceInfo{
-			ID:          s.Datasource.ID,
-			Theme:       string(s.Theme),
-			Type:        string(s.Datasource.Type),
-			Description: desc,
-		}
+	for _, s := range e.manager.GetRemoteSources(themeName) {
+		result = append(result, SourceInfo{
+			ID:          s.ID(),
+			Theme:       themeName,
+			Type:        "remote",
+			Description: s.Description(),
+		})
 	}
 
 	return result
 }
 
-// CurrentPath returns the current wallpaper path, if any.
 func (e *Engine) CurrentPath() string {
 	if e.state.HasCurrent() {
 		return e.state.Current.Path
@@ -496,19 +404,14 @@ func (e *Engine) CurrentPath() string {
 	return ""
 }
 
-// IsTempWallpaper returns true if the current wallpaper is temporary.
 func (e *Engine) IsTempWallpaper() bool {
 	return e.state.IsTempWallpaper()
 }
 
-// GetCurrentWallpaperPath returns the actual current wallpaper path from the system.
-// This is more reliable than state when wallpaper may have been changed externally.
 func (e *Engine) GetCurrentWallpaperPath() (string, error) {
 	return e.platform.Wallpaper().Get()
 }
 
-// OpenInFinder opens the current wallpaper in the file manager.
-// Uses the actual system wallpaper path, not the cached state.
 func (e *Engine) OpenInFinder() error {
 	path, err := e.platform.Wallpaper().Get()
 	if err != nil {
@@ -517,8 +420,6 @@ func (e *Engine) OpenInFinder() error {
 	return e.platform.FileManager().Reveal(path)
 }
 
-// OpenImage opens the current wallpaper in the default viewer.
-// Uses the actual system wallpaper path, not the cached state.
 func (e *Engine) OpenImage() error {
 	path, err := e.platform.Wallpaper().Get()
 	if err != nil {
@@ -527,11 +428,8 @@ func (e *Engine) OpenImage() error {
 	return e.platform.FileManager().Open(path)
 }
 
-// Agent methods
-
 const agentLabel = "com.wallboy.agent"
 
-// InstallAgent installs the background agent.
 func (e *Engine) InstallAgent(interval time.Duration) error {
 	scheduler := e.platform.Scheduler()
 	if !scheduler.IsSupported() {
@@ -564,7 +462,6 @@ func (e *Engine) InstallAgent(interval time.Duration) error {
 	return scheduler.Install(cfg)
 }
 
-// UninstallAgent uninstalls the background agent.
 func (e *Engine) UninstallAgent() error {
 	scheduler := e.platform.Scheduler()
 	if !scheduler.IsSupported() {
@@ -573,7 +470,6 @@ func (e *Engine) UninstallAgent() error {
 	return scheduler.Uninstall(agentLabel)
 }
 
-// AgentStatus returns the status of the background agent.
 func (e *Engine) AgentStatus() (*AgentStatus, error) {
 	scheduler := e.platform.Scheduler()
 
@@ -598,27 +494,10 @@ func (e *Engine) AgentStatus() (*AgentStatus, error) {
 	return status, nil
 }
 
-// Platform returns the current platform.
 func (e *Engine) Platform() platform.Platform {
 	return e.platform
 }
 
-// Config returns the current config.
 func (e *Engine) Config() *config.Config {
 	return e.config
-}
-
-func (e *Engine) pickFromRandomRemote(ctx context.Context, themeName string) (*datasource.Image, bool, error) {
-	sources := e.manager.GetSourcesByTheme(themeName)
-	_, remoteSources := e.separateSources(sources)
-
-	if len(remoteSources) == 0 {
-		return e.pickNextImage(ctx, themeName)
-	}
-
-	img, err := e.tryRemoteSources(ctx, remoteSources)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to fetch from remote sources: %w", err)
-	}
-	return img, true, nil
 }

@@ -121,111 +121,103 @@ Configuration is stored in =~/.config/wallboy/config.toml=
 [theme]
 mode = "auto"  # auto | light | dark
 
+[providers.local]
+recursive = true
+
 [light]
-[[light.datasource]]
-type = "local"
-dir = "~/Pictures"
+dirs = ["~/Pictures/Wallpapers/Light"]
 
 [dark]
-[[dark.datasource]]
-type = "local"
-dir = "~/Pictures"
+dirs = ["~/Pictures/Wallpapers/Dark"]
 #+end_src
 
 *** Full Config Example
 
 #+begin_src toml
-upload-dir = "~/.config/wallboy/saved"
-
 [state]
 path = "~/.config/wallboy/state.json"
 
 [theme]
-mode = "auto"
+mode = "auto"  # auto | light | dark
 
-# Light theme sources
-[light]
-upload-dir = "~/.config/wallboy/saved/light"
-
-[[light.datasource]]
-id = "light-local"
-type = "local"
-dir = "~/Pictures/Wallpapers/Light"
-recursive = true
-
-[[light.datasource]]
-id = "light-unsplash"
-type = "remote"
-provider = "unsplash"
-auth = "${UNSPLASH_ACCESS_KEY}"
-queries = ["nature", "minimal", "bright"]
-
-# Dark theme sources
-[dark]
-upload-dir = "~/.config/wallboy/saved/dark"
-
-[[dark.datasource]]
-id = "dark-local"
-type = "local"
-dir = "~/Pictures/Wallpapers/Dark"
-recursive = true
-
-[[dark.datasource]]
-id = "dark-wallhaven"
-type = "remote"
-provider = "wallhaven"
+# Provider credentials (configured once, used by all themes)
+[providers.wallhaven]
 auth = "${WALLHAVEN_API_KEY}"
-queries = ["dark", "night", "space", "cyberpunk"]
+
+[providers.unsplash]
+auth = "${UNSPLASH_ACCESS_KEY}"
+
+[providers.local]
+recursive = true  # scan subdirectories
+
+# Light theme
+[light]
+dirs = ["~/Pictures/Wallpapers/Light"]
+upload-dir = "~/Pictures/Wallpapers/Light"
+queries = ["nature", "minimal", "bright", "white art"]
+providers = ["wallhaven", "unsplash"]  # optional: limit to specific providers
+
+# Dark theme
+[dark]
+dirs = ["~/Pictures/Wallpapers/Dark"]
+upload-dir = "~/Pictures/Wallpapers/Dark"
+queries = ["night city", "cyberpunk", "neon", "space", "dark minimal"]
+# providers omitted = use all configured providers
 #+end_src
 
-** Datasources
+*** Config Structure
 
-*** Local Datasource
+| Section              | Description                                      |
+|----------------------+--------------------------------------------------|
+| =[state]=            | State file path                                  |
+| =[theme]=            | Theme mode: auto, light, or dark                 |
+| =[providers.*]=      | Provider credentials (wallhaven, unsplash, local)|
+| =[light]= / =[dark]= | Theme-specific settings                          |
 
-Uses images directly from a local directory.
+*** Theme Settings
+
+| Field        | Description                                          |
+|--------------+------------------------------------------------------|
+| =dirs=       | Array of local directories to scan for images        |
+| =upload-dir= | Where to save images from remote providers           |
+| =queries=    | Search queries for remote providers                  |
+| =providers=  | (Optional) Limit to specific providers               |
+
+** Providers
+
+*** Local Provider
+
+Scans local directories for images.
 
 #+begin_src toml
-[[dark.datasource]]
-id = "my-local"           # optional, auto-generated if not set
-type = "local"
-dir = "~/Pictures/Dark"
-recursive = true          # default: true
+[providers.local]
+recursive = true  # scan subdirectories (default: true)
 #+end_src
 
 Supported formats: =jpg=, =jpeg=, =png=, =webp=
 
-*** Remote Datasources
-
-When calling =next=, the image is downloaded to a temporary directory.
-If you like it, =save= moves it to =upload-dir=.
-If you don't, =next= or =delete= removes it and shows the next one.
-
-**** Wallhaven
+*** Wallhaven
 
 [[https://wallhaven.cc][Wallhaven]] is a popular wallpaper service with a large collection.
 
 1. Get your API key: https://wallhaven.cc/settings/account
-2. Export the key (optional):
+2. Export the key:
    #+begin_src bash
    export WALLHAVEN_API_KEY="your_key_here"
    #+end_src
 3. Add to config:
 
 #+begin_src toml
-[[dark.datasource]]
-id = "wallhaven-dark"
-type = "remote"
-provider = "wallhaven"
-auth = "${WALLHAVEN_API_KEY}"  # from environment variable
-queries = ["dark", "night", "space", "anime"]
+[providers.wallhaven]
+auth = "${WALLHAVEN_API_KEY}"
 #+end_src
 
 Example queries for Wallhaven:
-- Dark: =dark=, =night=, =space=, =cyberpunk=, =noir=
-- Light: =nature=, =sky=, =minimal=, =white=
-- Genres: =anime=, =landscape=, =abstract=, =city=
+- Dark: =night city=, =space=, =cyberpunk=, =neon=, =noir=
+- Light: =nature=, =sky=, =minimal=, =white art=
+- Genres: =anime=, =landscape=, =abstract=, =digital art=
 
-**** Unsplash
+*** Unsplash
 
 [[https://unsplash.com][Unsplash]] offers free high-quality photos.
 
@@ -234,27 +226,11 @@ Example queries for Wallhaven:
 3. Add to config:
 
 #+begin_src toml
-[[light.datasource]]
-id = "unsplash-nature"
-type = "remote"
-provider = "unsplash"
-auth = "${UNSPLASH_ACCESS_KEY}"  # from environment variable
-queries = ["nature", "landscape", "mountains"]
+[providers.unsplash]
+auth = "${UNSPLASH_ACCESS_KEY}"
 #+end_src
 
-**** Generic (Direct URL)
-
-For direct image URLs.
-
-#+begin_src toml
-[[dark.datasource]]
-id = "custom"
-type = "remote"
-provider = "generic"
-url = "https://example.com/wallpaper.jpg"
-#+end_src
-
-*** Environment Variables in Auth
+*** Environment Variables
 
 The =auth= field supports environment variables:
 
@@ -274,38 +250,42 @@ auth = "actual_api_key"
 
 ** Examples
 
-*** Add Wallhaven and Use It
+*** Setup with Wallhaven
 
 #+begin_src bash
-# 1. Edit config
+# 1. Export your API key
+export WALLHAVEN_API_KEY="your_key_here"
+
+# 2. Edit config
 vim ~/.config/wallboy/config.toml
 
 # Add:
-# [[dark.datasource]]
-# id = "wallhaven"
-# type = "remote"
-# provider = "wallhaven"
-# auth = "YOUR_API_KEY"
-# queries = ["dark", "space"]
+# [providers.wallhaven]
+# auth = "${WALLHAVEN_API_KEY}"
+#
+# [dark]
+# dirs = ["~/Pictures/Wallpapers/Dark"]
+# upload-dir = "~/Pictures/Wallpapers/Dark"
+# queries = ["cyberpunk", "neon", "night city"]
 
-# 2. Get a wallpaper
-wallboy next --source wallhaven
+# 3. Get a wallpaper
+wallboy next
 
-# 3. If you like it - save
+# 4. If you like it - save
 wallboy save
 
-# 4. If you don't - get next
+# 5. If you don't - get next
 wallboy next
 #+end_src
 
-*** Use a Specific Source
+*** Use Custom Query
 
 #+begin_src bash
-# List all sources
-wallboy sources
+# Override configured queries with a custom one
+wallboy next --query "epic anime landscape"
 
-# Use a specific one
-wallboy next --source wallhaven-dark
+# Useful for one-off searches without changing config
+wallboy next -q "minimalist gradient"
 #+end_src
 
 *** Force a Theme
@@ -313,6 +293,9 @@ wallboy next --source wallhaven-dark
 #+begin_src bash
 # Use dark theme regardless of system settings
 wallboy next --theme dark
+
+# Use light theme
+wallboy next --theme light
 #+end_src
 
 *** Analyze Colors

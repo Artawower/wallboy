@@ -1,8 +1,0 @@
-[theme]
-mode = "dark"
-
-[dark]
-[[dark.datasource]]
-type = "remote"
-# provider is missing
-auth = "some-key"

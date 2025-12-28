@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Artawower/wallboy/internal/config"
 	"github.com/Artawower/wallboy/internal/provider"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,18 +50,18 @@ func (m *mockProvider) Download(ctx context.Context, meta provider.ImageMeta, de
 }
 
 func TestNewRemoteSource(t *testing.T) {
-	cfg := config.Datasource{
-		ID:       "test-remote",
-		Type:     config.DatasourceTypeRemote,
-		Provider: config.ProviderUnsplash,
-		Auth:     "test-key",
-		Queries:  []string{"nature", "landscape"},
-	}
-
-	source := NewRemoteSource(cfg, "light", "/upload", "/temp")
+	source := NewRemoteSource(
+		"test-remote",
+		"unsplash",
+		"test-key",
+		"light",
+		"/upload",
+		"/temp",
+		[]string{"nature", "landscape"},
+	)
 
 	assert.Equal(t, "test-remote", source.ID())
-	assert.Equal(t, config.DatasourceTypeRemote, source.Type())
+	assert.Equal(t, SourceTypeRemote, source.Type())
 	assert.Equal(t, "light", source.Theme())
 	assert.Equal(t, "/upload", source.UploadDir())
 	assert.Equal(t, "/temp", source.TempDir())
@@ -70,11 +69,15 @@ func TestNewRemoteSource(t *testing.T) {
 
 func TestRemoteSource_Description(t *testing.T) {
 	t.Run("with provider", func(t *testing.T) {
-		cfg := config.Datasource{
-			ID:       "test-remote",
-			Provider: config.ProviderUnsplash,
-		}
-		source := NewRemoteSource(cfg, "light", "/upload", "/temp")
+		source := NewRemoteSource(
+			"test-remote",
+			"unsplash",
+			"test-key",
+			"light",
+			"/upload",
+			"/temp",
+			nil,
+		)
 		assert.Contains(t, source.Description(), "unsplash")
 	})
 }
@@ -83,13 +86,16 @@ func TestRemoteSource_ListImages(t *testing.T) {
 	tmpDir := t.TempDir()
 	uploadDir := filepath.Join(tmpDir, "upload")
 
-	cfg := config.Datasource{
-		ID:       "test-remote",
-		Provider: config.ProviderUnsplash,
-	}
-
 	t.Run("empty upload dir", func(t *testing.T) {
-		source := NewRemoteSource(cfg, "light", uploadDir, filepath.Join(tmpDir, "temp"))
+		source := NewRemoteSource(
+			"test-remote",
+			"unsplash",
+			"test-key",
+			"light",
+			uploadDir,
+			filepath.Join(tmpDir, "temp"),
+			nil,
+		)
 		images, err := source.ListImages(context.Background())
 		require.NoError(t, err)
 		assert.Empty(t, images)
@@ -102,7 +108,15 @@ func TestRemoteSource_ListImages(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(uploadDir, "saved2.png"), []byte("test"), 0644))
 		require.NoError(t, os.WriteFile(filepath.Join(uploadDir, "not_image.txt"), []byte("test"), 0644))
 
-		source := NewRemoteSource(cfg, "dark", uploadDir, filepath.Join(tmpDir, "temp"))
+		source := NewRemoteSource(
+			"test-remote",
+			"unsplash",
+			"test-key",
+			"dark",
+			uploadDir,
+			filepath.Join(tmpDir, "temp"),
+			nil,
+		)
 		images, err := source.ListImages(context.Background())
 		require.NoError(t, err)
 		assert.Len(t, images, 2)
@@ -114,10 +128,39 @@ func TestRemoteSource_ListImages(t *testing.T) {
 		}
 	})
 
+	t.Run("with uppercase extensions", func(t *testing.T) {
+		upperDir := filepath.Join(tmpDir, "upper")
+		require.NoError(t, os.MkdirAll(upperDir, 0755))
+		require.NoError(t, os.WriteFile(filepath.Join(upperDir, "image1.JPG"), []byte("test"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(upperDir, "image2.PNG"), []byte("test"), 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(upperDir, "image3.JPEG"), []byte("test"), 0644))
+
+		source := NewRemoteSource(
+			"test-remote",
+			"unsplash",
+			"test-key",
+			"light",
+			upperDir,
+			filepath.Join(tmpDir, "temp"),
+			nil,
+		)
+		images, err := source.ListImages(context.Background())
+		require.NoError(t, err)
+		assert.Len(t, images, 3, "should find images with uppercase extensions")
+	})
+
 	t.Run("context cancellation", func(t *testing.T) {
 		require.NoError(t, os.MkdirAll(uploadDir, 0755))
 
-		source := NewRemoteSource(cfg, "light", uploadDir, filepath.Join(tmpDir, "temp"))
+		source := NewRemoteSource(
+			"test-remote",
+			"unsplash",
+			"test-key",
+			"light",
+			uploadDir,
+			filepath.Join(tmpDir, "temp"),
+			nil,
+		)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
@@ -138,11 +181,15 @@ func TestRemoteSource_Save(t *testing.T) {
 	tempFile := filepath.Join(tempDir, "temp_image.jpg")
 	require.NoError(t, os.WriteFile(tempFile, []byte("image data"), 0644))
 
-	cfg := config.Datasource{
-		ID:       "test-remote",
-		Provider: config.ProviderUnsplash,
-	}
-	source := NewRemoteSource(cfg, "light", uploadDir, tempDir)
+	source := NewRemoteSource(
+		"test-remote",
+		"unsplash",
+		"test-key",
+		"light",
+		uploadDir,
+		tempDir,
+		nil,
+	)
 
 	t.Run("save creates upload dir and moves file", func(t *testing.T) {
 		savedPath, err := source.Save(tempFile)
@@ -168,11 +215,15 @@ func TestRemoteSource_CleanTemp(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "temp1.jpg"), []byte("test"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(tempDir, "temp2.jpg"), []byte("test"), 0644))
 
-	cfg := config.Datasource{
-		ID:       "test-remote",
-		Provider: config.ProviderUnsplash,
-	}
-	source := NewRemoteSource(cfg, "light", filepath.Join(tmpDir, "upload"), tempDir)
+	source := NewRemoteSource(
+		"test-remote",
+		"unsplash",
+		"test-key",
+		"light",
+		filepath.Join(tmpDir, "upload"),
+		tempDir,
+		nil,
+	)
 
 	err := source.CleanTemp()
 	require.NoError(t, err)
@@ -184,34 +235,33 @@ func TestRemoteSource_CleanTemp(t *testing.T) {
 }
 
 func TestRemoteSource_CleanTemp_NoDir(t *testing.T) {
-	cfg := config.Datasource{
-		ID:       "test-remote",
-		Provider: config.ProviderUnsplash,
-	}
-
 	t.Run("empty temp dir path", func(t *testing.T) {
-		source := NewRemoteSource(cfg, "light", "/upload", "")
+		source := NewRemoteSource(
+			"test-remote",
+			"unsplash",
+			"test-key",
+			"light",
+			"/upload",
+			"",
+			nil,
+		)
 		err := source.CleanTemp()
 		assert.NoError(t, err)
 	})
 
 	t.Run("non-existent temp dir", func(t *testing.T) {
-		source := NewRemoteSource(cfg, "light", "/upload", "/nonexistent/temp")
+		source := NewRemoteSource(
+			"test-remote",
+			"unsplash",
+			"test-key",
+			"light",
+			"/upload",
+			"/nonexistent/temp",
+			nil,
+		)
 		err := source.CleanTemp()
 		assert.NoError(t, err)
 	})
-}
-
-func TestRemoteSource_Sync(t *testing.T) {
-	cfg := config.Datasource{
-		ID:       "test-remote",
-		Provider: config.ProviderUnsplash,
-	}
-	source := NewRemoteSource(cfg, "light", "/upload", "/temp")
-
-	// Sync should be a no-op
-	err := source.Sync(context.Background(), nil)
-	assert.NoError(t, err)
 }
 
 func TestRemoteSource_FetchRandom_NoProvider(t *testing.T) {

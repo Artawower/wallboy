@@ -1,8 +1,8 @@
 [theme]
 mode = "dark"
 
-[dark]
-[[dark.datasource]]
-type = "remote"
-provider = "unknown_provider"
+[providers.unknown_provider]
 auth = "some-key"
+
+[dark]
+dirs = ["/tmp/pictures"]

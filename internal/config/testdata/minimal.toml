@@ -1,7 +1,8 @@
 [theme]
 mode = "dark"
 
+[providers.local]
+recursive = true
+
 [dark]
-[[dark.datasource]]
-type = "local"
-dir = "/tmp/pictures"
+dirs = ["/tmp/pictures"]

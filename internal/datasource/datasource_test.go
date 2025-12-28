@@ -6,23 +6,15 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Artawower/wallboy/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewLocalSource(t *testing.T) {
-	cfg := config.Datasource{
-		ID:        "test-local",
-		Type:      config.DatasourceTypeLocal,
-		Dir:       "/tmp/wallpapers",
-		Recursive: true,
-	}
-
-	source := NewLocalSource(cfg, "light")
+	source := NewLocalSource("test-local", "/tmp/wallpapers", "light", true)
 
 	assert.Equal(t, "test-local", source.ID())
-	assert.Equal(t, config.DatasourceTypeLocal, source.Type())
+	assert.Equal(t, SourceTypeLocal, source.Type())
 	assert.Equal(t, "light", source.Theme())
 	assert.Equal(t, "/tmp/wallpapers", source.Description())
 }
@@ -51,12 +43,7 @@ func TestLocalSource_ListImages(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(subDir, "sub_image.jpg"), []byte("test"), 0644))
 
 	t.Run("recursive", func(t *testing.T) {
-		cfg := config.Datasource{
-			ID:        "test-local",
-			Dir:       tmpDir,
-			Recursive: true,
-		}
-		source := NewLocalSource(cfg, "light")
+		source := NewLocalSource("test-local", tmpDir, "light", true)
 
 		images, err := source.ListImages(context.Background())
 		require.NoError(t, err)
@@ -76,12 +63,7 @@ func TestLocalSource_ListImages(t *testing.T) {
 	})
 
 	t.Run("non-recursive", func(t *testing.T) {
-		cfg := config.Datasource{
-			ID:        "test-local",
-			Dir:       tmpDir,
-			Recursive: false,
-		}
-		source := NewLocalSource(cfg, "dark")
+		source := NewLocalSource("test-local", tmpDir, "dark", false)
 
 		images, err := source.ListImages(context.Background())
 		require.NoError(t, err)
@@ -91,11 +73,7 @@ func TestLocalSource_ListImages(t *testing.T) {
 	})
 
 	t.Run("non-existent directory", func(t *testing.T) {
-		cfg := config.Datasource{
-			ID:  "test-local",
-			Dir: "/nonexistent/path",
-		}
-		source := NewLocalSource(cfg, "light")
+		source := NewLocalSource("test-local", "/nonexistent/path", "light", false)
 
 		images, err := source.ListImages(context.Background())
 		require.Error(t, err)
@@ -104,12 +82,7 @@ func TestLocalSource_ListImages(t *testing.T) {
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
-		cfg := config.Datasource{
-			ID:        "test-local",
-			Dir:       tmpDir,
-			Recursive: true,
-		}
-		source := NewLocalSource(cfg, "light")
+		source := NewLocalSource("test-local", tmpDir, "light", true)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
@@ -119,81 +92,105 @@ func TestLocalSource_ListImages(t *testing.T) {
 	})
 }
 
-func TestLocalSource_Sync(t *testing.T) {
-	cfg := config.Datasource{ID: "test-local", Dir: "/tmp"}
-	source := NewLocalSource(cfg, "light")
-
-	// Sync should be a no-op for local sources
-	err := source.Sync(context.Background(), nil)
-	assert.NoError(t, err)
-}
-
 func TestNewManager(t *testing.T) {
 	m := NewManager("/upload", "/temp")
 
 	assert.Equal(t, "/upload", m.UploadDir())
 	assert.Equal(t, "/temp", m.TempDir())
-	assert.Empty(t, m.GetSources())
+	assert.Empty(t, m.GetLocalSources("any"))
+	assert.Empty(t, m.GetRemoteSources("any"))
 }
 
-func TestManager_AddSource(t *testing.T) {
+func TestManager_AddLocalSource(t *testing.T) {
 	m := NewManager("/upload", "/temp")
 
-	cfg := config.Datasource{ID: "test-local", Dir: "/tmp"}
-	source := NewLocalSource(cfg, "light")
+	source := NewLocalSource("test-local", "/tmp", "light", false)
+	m.AddLocalSource(source)
 
-	m.AddSource(source)
-
-	sources := m.GetSources()
+	sources := m.GetLocalSources("light")
 	require.Len(t, sources, 1)
 	assert.Equal(t, "test-local", sources[0].ID())
 }
 
-func TestManager_GetSourceByID(t *testing.T) {
+func TestManager_GetLocalSources(t *testing.T) {
 	m := NewManager("/upload", "/temp")
 
-	cfg1 := config.Datasource{ID: "source-1", Dir: "/tmp/1"}
-	cfg2 := config.Datasource{ID: "source-2", Dir: "/tmp/2"}
+	m.AddLocalSource(NewLocalSource("light-1", "/tmp/1", "light", false))
+	m.AddLocalSource(NewLocalSource("light-2", "/tmp/2", "light", false))
+	m.AddLocalSource(NewLocalSource("dark-1", "/tmp/3", "dark", false))
 
-	m.AddSource(NewLocalSource(cfg1, "light"))
-	m.AddSource(NewLocalSource(cfg2, "dark"))
-
-	t.Run("found", func(t *testing.T) {
-		source, err := m.GetSourceByID("source-1")
-		require.NoError(t, err)
-		assert.Equal(t, "source-1", source.ID())
-	})
-
-	t.Run("not found", func(t *testing.T) {
-		source, err := m.GetSourceByID("nonexistent")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not found")
-		assert.Nil(t, source)
-	})
-}
-
-func TestManager_GetSourcesByTheme(t *testing.T) {
-	m := NewManager("/upload", "/temp")
-
-	cfg1 := config.Datasource{ID: "light-1", Dir: "/tmp/1"}
-	cfg2 := config.Datasource{ID: "light-2", Dir: "/tmp/2"}
-	cfg3 := config.Datasource{ID: "dark-1", Dir: "/tmp/3"}
-
-	m.AddSource(NewLocalSource(cfg1, "light"))
-	m.AddSource(NewLocalSource(cfg2, "light"))
-	m.AddSource(NewLocalSource(cfg3, "dark"))
-
-	lightSources := m.GetSourcesByTheme("light")
+	lightSources := m.GetLocalSources("light")
 	assert.Len(t, lightSources, 2)
 
-	darkSources := m.GetSourcesByTheme("dark")
+	darkSources := m.GetLocalSources("dark")
 	assert.Len(t, darkSources, 1)
 
-	otherSources := m.GetSourcesByTheme("other")
+	otherSources := m.GetLocalSources("other")
 	assert.Empty(t, otherSources)
 }
 
-func TestManager_ListAllImages(t *testing.T) {
+func TestManager_HasLocalSources(t *testing.T) {
+	m := NewManager("/upload", "/temp")
+
+	source := NewLocalSource("local-source", "/tmp", "light", false)
+	m.AddLocalSource(source)
+
+	assert.True(t, m.HasLocalSources("light"))
+	assert.False(t, m.HasLocalSources("dark"))
+}
+
+func TestManager_HasRemoteSources(t *testing.T) {
+	m := NewManager("/upload", "/temp")
+
+	source := NewLocalSource("local-source", "/tmp", "light", false)
+	m.AddLocalSource(source)
+
+	assert.False(t, m.HasRemoteSources("light"))
+	assert.False(t, m.HasRemoteSources("dark"))
+}
+
+func TestManager_PickRandomLocal(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create images
+	for i := 0; i < 5; i++ {
+		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "img"+string(rune('A'+i))+".jpg"), []byte("test"), 0644))
+	}
+
+	m := NewManager("/upload", "/temp")
+	m.AddLocalSource(NewLocalSource("test-source", tmpDir, "light", false))
+
+	t.Run("picks image", func(t *testing.T) {
+		img, err := m.PickRandomLocal(context.Background(), "light", nil)
+		require.NoError(t, err)
+		require.NotNil(t, img)
+		assert.Contains(t, img.Path, tmpDir)
+	})
+
+	t.Run("excludes history", func(t *testing.T) {
+		// Get all images from the source
+		source := m.GetLocalSources("light")[0]
+		images, _ := source.ListImages(context.Background())
+		history := make([]string, len(images)-1)
+		for i := 0; i < len(images)-1; i++ {
+			history[i] = images[i].Path
+		}
+
+		// Pick should get the remaining one
+		img, err := m.PickRandomLocal(context.Background(), "light", history)
+		require.NoError(t, err)
+		require.NotNil(t, img)
+	})
+
+	t.Run("no sources for theme", func(t *testing.T) {
+		img, err := m.PickRandomLocal(context.Background(), "nonexistent-theme", nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no local sources")
+		assert.Nil(t, img)
+	})
+}
+
+func TestManager_PickRandomLocal_MultipleSources(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create directories with images
@@ -208,227 +205,115 @@ func TestManager_ListAllImages(t *testing.T) {
 
 	m := NewManager(filepath.Join(tmpDir, "upload"), filepath.Join(tmpDir, "temp"))
 
-	cfg1 := config.Datasource{ID: "source-1", Dir: dir1}
-	cfg2 := config.Datasource{ID: "source-2", Dir: dir2}
+	m.AddLocalSource(NewLocalSource("source-1", dir1, "light", false))
+	m.AddLocalSource(NewLocalSource("source-2", dir2, "light", false))
 
-	m.AddSource(NewLocalSource(cfg1, "light"))
-	m.AddSource(NewLocalSource(cfg2, "light"))
-
-	images, err := m.ListAllImages(context.Background(), "light")
+	// Should be able to pick from multiple sources
+	img, err := m.PickRandomLocal(context.Background(), "light", nil)
 	require.NoError(t, err)
-	assert.Len(t, images, 3)
+	require.NotNil(t, img)
 }
 
-func TestManager_ListImagesFromSource(t *testing.T) {
-	tmpDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "img.jpg"), []byte("test"), 0644))
-
+func TestManager_FetchRandomRemote(t *testing.T) {
 	m := NewManager("/upload", "/temp")
-	cfg := config.Datasource{ID: "test-source", Dir: tmpDir}
-	m.AddSource(NewLocalSource(cfg, "light"))
 
-	t.Run("existing source", func(t *testing.T) {
-		images, err := m.ListImagesFromSource(context.Background(), "test-source")
-		require.NoError(t, err)
-		assert.Len(t, images, 1)
-	})
-
-	t.Run("non-existent source", func(t *testing.T) {
-		images, err := m.ListImagesFromSource(context.Background(), "nonexistent")
+	// No remote sources
+	t.Run("no remote sources", func(t *testing.T) {
+		img, err := m.FetchRandomRemote(context.Background(), "light", "")
 		require.Error(t, err)
-		assert.Nil(t, images)
-	})
-}
-
-func TestManager_PickRandom(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create images
-	for i := 0; i < 5; i++ {
-		path := filepath.Join(tmpDir, filepath.Base(tmpDir), "img"+string(rune('A'+i))+".jpg")
-		dir := filepath.Dir(path)
-		require.NoError(t, os.MkdirAll(dir, 0755))
-		require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "img"+string(rune('A'+i))+".jpg"), []byte("test"), 0644))
-	}
-
-	m := NewManager("/upload", "/temp")
-	cfg := config.Datasource{ID: "test-source", Dir: tmpDir}
-	m.AddSource(NewLocalSource(cfg, "light"))
-
-	t.Run("picks image", func(t *testing.T) {
-		img, err := m.PickRandom(context.Background(), "light", nil)
-		require.NoError(t, err)
-		require.NotNil(t, img)
-		assert.Contains(t, img.Path, tmpDir)
-	})
-
-	t.Run("excludes history", func(t *testing.T) {
-		// Get all images
-		images, _ := m.ListAllImages(context.Background(), "light")
-		history := make([]string, len(images)-1)
-		for i := 0; i < len(images)-1; i++ {
-			history[i] = images[i].Path
-		}
-
-		// Pick should get the remaining one
-		img, err := m.PickRandom(context.Background(), "light", history)
-		require.NoError(t, err)
-		require.NotNil(t, img)
-	})
-
-	t.Run("no sources for theme", func(t *testing.T) {
-		img, err := m.PickRandom(context.Background(), "nonexistent-theme", nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no datasources available")
+		assert.Contains(t, err.Error(), "no remote sources")
 		assert.Nil(t, img)
 	})
 }
 
-func TestManager_PickRandomFromSource(t *testing.T) {
+func TestManager_GetRemoteSourceByID(t *testing.T) {
+	m := NewManager("/upload", "/temp")
+
+	t.Run("not found", func(t *testing.T) {
+		source, err := m.GetRemoteSourceByID("nonexistent")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+		assert.Nil(t, source)
+	})
+}
+
+func TestManager_GetLocalSourceByID(t *testing.T) {
+	m := NewManager("/upload", "/temp")
+
+	m.AddLocalSource(NewLocalSource("light-local-1", "/tmp/light", "light", false))
+
+	t.Run("found", func(t *testing.T) {
+		source, err := m.GetLocalSourceByID("light-local-1")
+		require.NoError(t, err)
+		assert.Equal(t, "light-local-1", source.ID())
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		source, err := m.GetLocalSourceByID("nonexistent")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found")
+		assert.Nil(t, source)
+	})
+}
+
+func TestManager_PickRandomFromLocalSource(t *testing.T) {
 	tmpDir := t.TempDir()
+
+	// Create images
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "img1.jpg"), []byte("test"), 0644))
 	require.NoError(t, os.WriteFile(filepath.Join(tmpDir, "img2.jpg"), []byte("test"), 0644))
 
 	m := NewManager("/upload", "/temp")
-	cfg := config.Datasource{ID: "test-source", Dir: tmpDir}
-	m.AddSource(NewLocalSource(cfg, "light"))
+	m.AddLocalSource(NewLocalSource("test-source", tmpDir, "light", false))
 
-	t.Run("picks from source", func(t *testing.T) {
-		img, err := m.PickRandomFromSource(context.Background(), "test-source", nil)
+	t.Run("picks from specific source", func(t *testing.T) {
+		img, err := m.PickRandomFromLocalSource(context.Background(), "test-source", nil)
 		require.NoError(t, err)
 		require.NotNil(t, img)
 		assert.Equal(t, "test-source", img.SourceID)
 	})
 
 	t.Run("with history filter", func(t *testing.T) {
-		img, err := m.PickRandomFromSource(context.Background(), "test-source", []string{filepath.Join(tmpDir, "img1.jpg")})
+		img, err := m.PickRandomFromLocalSource(context.Background(), "test-source", []string{filepath.Join(tmpDir, "img1.jpg")})
 		require.NoError(t, err)
 		require.NotNil(t, img)
 	})
 
-	t.Run("non-existent source", func(t *testing.T) {
-		img, err := m.PickRandomFromSource(context.Background(), "nonexistent", nil)
+	t.Run("source not found", func(t *testing.T) {
+		img, err := m.PickRandomFromLocalSource(context.Background(), "nonexistent", nil)
 		require.Error(t, err)
 		assert.Nil(t, img)
 	})
 
-	t.Run("empty directory", func(t *testing.T) {
+	t.Run("empty source", func(t *testing.T) {
 		emptyDir := t.TempDir()
 		m2 := NewManager("/upload", "/temp")
-		cfg2 := config.Datasource{ID: "empty-source", Dir: emptyDir}
-		m2.AddSource(NewLocalSource(cfg2, "light"))
+		m2.AddLocalSource(NewLocalSource("empty-source", emptyDir, "light", false))
 
-		img, err := m2.PickRandomFromSource(context.Background(), "empty-source", nil)
+		img, err := m2.PickRandomFromLocalSource(context.Background(), "empty-source", nil)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no images available")
+		assert.Contains(t, err.Error(), "no images")
 		assert.Nil(t, img)
 	})
 }
 
-func TestManager_HasRemoteSources(t *testing.T) {
+func TestManager_PickRandomLocal_ReturnsError(t *testing.T) {
 	m := NewManager("/upload", "/temp")
 
-	cfg := config.Datasource{ID: "local-source", Dir: "/tmp"}
-	m.AddSource(NewLocalSource(cfg, "light"))
+	// Add source with non-existent directory
+	m.AddLocalSource(NewLocalSource("bad-source", "/nonexistent/path", "light", false))
 
-	assert.False(t, m.HasRemoteSources("light"))
-	assert.False(t, m.HasRemoteSources("dark"))
-}
-
-func TestManager_GetRemoteSourcesForTheme(t *testing.T) {
-	m := NewManager("/upload", "/temp")
-
-	cfg := config.Datasource{ID: "local-source", Dir: "/tmp"}
-	m.AddSource(NewLocalSource(cfg, "light"))
-
-	// Should return empty list when no remote sources
-	remoteSources := m.GetRemoteSourcesForTheme("light")
-	assert.Empty(t, remoteSources)
-}
-
-func TestManager_FetchRandomFromRemote(t *testing.T) {
-	m := NewManager("/upload", "/temp")
-
-	cfg := config.Datasource{ID: "local-source", Dir: "/tmp"}
-	m.AddSource(NewLocalSource(cfg, "light"))
-
-	t.Run("not a remote source", func(t *testing.T) {
-		img, err := m.FetchRandomFromRemote(context.Background(), "local-source", "")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a remote source")
-		assert.Nil(t, img)
-	})
-
-	t.Run("source not found", func(t *testing.T) {
-		img, err := m.FetchRandomFromRemote(context.Background(), "nonexistent", "")
-		require.Error(t, err)
-		assert.Nil(t, img)
-	})
-}
-
-func TestManager_FetchRandomFromRemote_QueryOverride(t *testing.T) {
-	// This test verifies that queryOverride is passed through to the remote source.
-	// We can't easily test the actual behavior without mocking the provider,
-	// but we can verify the API signature works correctly.
-	m := NewManager("/upload", "/temp")
-
-	cfg := config.Datasource{ID: "local-source", Dir: "/tmp"}
-	m.AddSource(NewLocalSource(cfg, "light"))
-
-	t.Run("query override passed to local source returns error", func(t *testing.T) {
-		// Local sources don't support fetch, so this should still error
-		img, err := m.FetchRandomFromRemote(context.Background(), "local-source", "nature")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a remote source")
-		assert.Nil(t, img)
-	})
-}
-
-func TestManager_SaveCurrentImage(t *testing.T) {
-	m := NewManager("/upload", "/temp")
-
-	cfg := config.Datasource{ID: "local-source", Dir: "/tmp"}
-	m.AddSource(NewLocalSource(cfg, "light"))
-
-	t.Run("not a remote source", func(t *testing.T) {
-		path, err := m.SaveCurrentImage("local-source", "/tmp/img.jpg")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a remote source")
-		assert.Empty(t, path)
-	})
-
-	t.Run("source not found", func(t *testing.T) {
-		path, err := m.SaveCurrentImage("nonexistent", "/tmp/img.jpg")
-		require.Error(t, err)
-		assert.Empty(t, path)
-	})
-}
-
-func TestManager_GetRemoteSource(t *testing.T) {
-	m := NewManager("/upload", "/temp")
-
-	cfg := config.Datasource{ID: "local-source", Dir: "/tmp"}
-	m.AddSource(NewLocalSource(cfg, "light"))
-
-	t.Run("not a remote source", func(t *testing.T) {
-		remote, err := m.GetRemoteSource("local-source")
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a remote source")
-		assert.Nil(t, remote)
-	})
-
-	t.Run("source not found", func(t *testing.T) {
-		remote, err := m.GetRemoteSource("nonexistent")
-		require.Error(t, err)
-		assert.Nil(t, remote)
-	})
+	img, err := m.PickRandomLocal(context.Background(), "light", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "does not exist")
+	assert.Nil(t, img)
 }
 
 func TestManager_CleanupTemp(t *testing.T) {
 	m := NewManager("/upload", "/temp")
 
-	cfg := config.Datasource{ID: "local-source", Dir: "/tmp"}
-	m.AddSource(NewLocalSource(cfg, "light"))
+	source := NewLocalSource("local-source", "/tmp", "light", false)
+	m.AddLocalSource(source)
 
 	// Should not panic
 	m.CleanupTemp()

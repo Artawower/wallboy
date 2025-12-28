@@ -1,9 +1,15 @@
 [theme]
 mode = "dark"
 
-[dark]
-[[dark.datasource]]
-type = "remote"
-provider = "wallhaven"
+[providers.wallhaven]
 auth = "${TEST_API_KEY}"
+
+[light]
+dirs = ["/tmp/pictures/light"]
+upload-dir = "/tmp/wallboy/light"
+queries = ["light"]
+
+[dark]
+dirs = ["/tmp/pictures"]
+upload-dir = "/tmp/wallboy/dark"
 queries = ["dark"]

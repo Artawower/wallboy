@@ -19,39 +19,28 @@ const (
 	ThemeModeDark  ThemeMode = "dark"
 )
 
-// DatasourceType represents the type of datasource.
-type DatasourceType string
-
-const (
-	DatasourceTypeLocal  DatasourceType = "local"
-	DatasourceTypeRemote DatasourceType = "remote"
-)
-
 // ProviderType represents the type of remote provider.
 type ProviderType string
 
 const (
 	ProviderUnsplash  ProviderType = "unsplash"
 	ProviderWallhaven ProviderType = "wallhaven"
-	ProviderGeneric   ProviderType = "generic"
+	ProviderLocal     ProviderType = "local"
 )
 
-// Datasource represents a single image source configuration.
-type Datasource struct {
-	ID        string         `toml:"id"`
-	Type      DatasourceType `toml:"type"`
-	Dir       string         `toml:"dir"`
-	Recursive bool           `toml:"recursive"`
-	Provider  ProviderType   `toml:"provider"`
-	Auth      string         `toml:"auth"`
-	Queries   []string       `toml:"queries"`
-	URL       string         `toml:"url"` // For generic provider
+// ProviderConfig represents a provider configuration.
+type ProviderConfig struct {
+	Auth      string `toml:"auth"`
+	Recursive bool   `toml:"recursive"` // For local provider
+	Weight    int    `toml:"weight"`    // Selection weight (default 1)
 }
 
 // ThemeConfig represents theme-specific configuration.
 type ThemeConfig struct {
-	UploadDir   string       `toml:"upload-dir"`
-	Datasources []Datasource `toml:"datasource"`
+	Dirs      []string `toml:"dirs"`       // Local directories (sources)
+	UploadDir string   `toml:"upload-dir"` // Where to save remote images
+	Queries   []string `toml:"queries"`    // Search queries for remote providers
+	Providers []string `toml:"providers"`  // Optional: limit to specific providers
 }
 
 // StateConfig represents state file configuration.
@@ -66,17 +55,17 @@ type ThemeSettings struct {
 
 // Config represents the complete configuration.
 type Config struct {
-	UploadDir string        `toml:"upload-dir"`
-	State     StateConfig   `toml:"state"`
-	Theme     ThemeSettings `toml:"theme"`
-	Light     ThemeConfig   `toml:"light"`
-	Dark      ThemeConfig   `toml:"dark"`
+	State     StateConfig               `toml:"state"`
+	Theme     ThemeSettings             `toml:"theme"`
+	Providers map[string]ProviderConfig `toml:"providers"`
+	Light     ThemeConfig               `toml:"light"`
+	Dark      ThemeConfig               `toml:"dark"`
 
 	// Runtime fields (not from TOML)
 	configPath string
 }
 
-// DefaultConfigDir returns the default configuration directory for macOS.
+// DefaultConfigDir returns the default configuration directory.
 func DefaultConfigDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -92,32 +81,22 @@ func DefaultConfig() *Config {
 	picturesDir := filepath.Join(home, "Pictures")
 
 	return &Config{
-		UploadDir: filepath.Join(configDir, "saved"),
 		State: StateConfig{
 			Path: filepath.Join(configDir, "state.json"),
 		},
 		Theme: ThemeSettings{
 			Mode: ThemeModeAuto,
 		},
+		Providers: map[string]ProviderConfig{
+			"local": {Recursive: true},
+		},
 		Light: ThemeConfig{
+			Dirs:      []string{picturesDir},
 			UploadDir: filepath.Join(configDir, "saved", "light"),
-			Datasources: []Datasource{
-				{
-					Type:      DatasourceTypeLocal,
-					Dir:       picturesDir,
-					Recursive: true,
-				},
-			},
 		},
 		Dark: ThemeConfig{
+			Dirs:      []string{picturesDir},
 			UploadDir: filepath.Join(configDir, "saved", "dark"),
-			Datasources: []Datasource{
-				{
-					Type:      DatasourceTypeLocal,
-					Dir:       picturesDir,
-					Recursive: true,
-				},
-			},
 		},
 	}
 }
@@ -128,27 +107,21 @@ func Load(path string) (*Config, error) {
 		path = filepath.Join(DefaultConfigDir(), "config.toml")
 	}
 
-	// Expand ~ in path
 	path = expandPath(path)
 
 	cfg := DefaultConfig()
 	cfg.configPath = path
 
-	// Check if config file exists
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		// Return default config if file doesn't exist
 		return cfg, nil
 	}
 
-	// Parse TOML file
 	if _, err := toml.DecodeFile(path, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Post-process configuration
 	cfg.postProcess()
 
-	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
@@ -156,75 +129,33 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// postProcess expands paths and generates IDs.
+// postProcess expands paths and environment variables.
 func (c *Config) postProcess() {
-	// Expand paths
-	c.UploadDir = expandPath(c.UploadDir)
 	c.State.Path = expandPath(c.State.Path)
-	c.Light.UploadDir = expandPath(c.Light.UploadDir)
-	c.Dark.UploadDir = expandPath(c.Dark.UploadDir)
 
-	// Set theme-specific upload dirs if not set
-	if c.Light.UploadDir == "" {
-		c.Light.UploadDir = filepath.Join(c.UploadDir, "light")
-	}
-	if c.Dark.UploadDir == "" {
-		c.Dark.UploadDir = filepath.Join(c.UploadDir, "dark")
+	// Process providers
+	for name, p := range c.Providers {
+		p.Auth = expandEnv(p.Auth)
+		if p.Weight == 0 {
+			p.Weight = 1
+		}
+		c.Providers[name] = p
 	}
 
-	// Process light datasources
-	c.processThemeDatasources("light", &c.Light)
-	// Process dark datasources
-	c.processThemeDatasources("dark", &c.Dark)
+	// Process themes
+	c.processTheme(&c.Light)
+	c.processTheme(&c.Dark)
 }
 
-// processThemeDatasources expands paths and generates IDs for datasources.
-func (c *Config) processThemeDatasources(themeName string, theme *ThemeConfig) {
-	localCount := 0
-	remoteCount := make(map[ProviderType]int)
-
-	for i := range theme.Datasources {
-		ds := &theme.Datasources[i]
-
-		// Expand paths
-		ds.Dir = expandPath(ds.Dir)
-
-		// Expand environment variables in auth
-		ds.Auth = expandEnv(ds.Auth)
-
-		// Note: Default recursive is set in DefaultConfig
-		// TOML doesn't distinguish between false and unset for bools
-
-		// Generate ID if not set
-		if ds.ID == "" {
-			ds.ID = c.generateDatasourceID(themeName, ds, &localCount, remoteCount)
-		}
-	}
-}
-
-// generateDatasourceID generates a unique ID for a datasource.
-func (c *Config) generateDatasourceID(themeName string, ds *Datasource, localCount *int, remoteCount map[ProviderType]int) string {
-	switch ds.Type {
-	case DatasourceTypeLocal:
-		*localCount++
-		if *localCount == 1 {
-			return fmt.Sprintf("%s-local", themeName)
-		}
-		return fmt.Sprintf("%s-local-%d", themeName, *localCount)
-	case DatasourceTypeRemote:
-		remoteCount[ds.Provider]++
-		if remoteCount[ds.Provider] == 1 {
-			return fmt.Sprintf("%s-%s", themeName, ds.Provider)
-		}
-		return fmt.Sprintf("%s-%s-%d", themeName, ds.Provider, remoteCount[ds.Provider])
-	default:
-		return fmt.Sprintf("%s-unknown", themeName)
+func (c *Config) processTheme(theme *ThemeConfig) {
+	theme.UploadDir = expandPath(theme.UploadDir)
+	for i, dir := range theme.Dirs {
+		theme.Dirs[i] = expandPath(dir)
 	}
 }
 
 // Validate validates the configuration.
 func (c *Config) Validate() error {
-	// Validate theme mode
 	switch c.Theme.Mode {
 	case ThemeModeAuto, ThemeModeLight, ThemeModeDark:
 		// Valid
@@ -232,50 +163,76 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid theme mode: %s (must be auto, light, or dark)", c.Theme.Mode)
 	}
 
-	// Validate datasources
-	if err := c.validateDatasources("light", c.Light.Datasources); err != nil {
+	// Validate providers
+	for name, p := range c.Providers {
+		if name == "local" {
+			continue
+		}
+		if !isValidProvider(name) {
+			return fmt.Errorf("unknown provider: %s", name)
+		}
+		if p.Auth == "" {
+			return fmt.Errorf("provider %s: auth is required", name)
+		}
+	}
+
+	// Validate theme provider references
+	if err := c.validateThemeProviders("light", &c.Light); err != nil {
 		return err
 	}
-	if err := c.validateDatasources("dark", c.Dark.Datasources); err != nil {
+	if err := c.validateThemeProviders("dark", &c.Dark); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// validateDatasources validates a list of datasources.
-func (c *Config) validateDatasources(themeName string, datasources []Datasource) error {
-	ids := make(map[string]bool)
-
-	for i, ds := range datasources {
-		// Check for duplicate IDs
-		if ids[ds.ID] {
-			return fmt.Errorf("duplicate datasource ID: %s", ds.ID)
+func (c *Config) validateThemeProviders(themeName string, theme *ThemeConfig) error {
+	for _, p := range theme.Providers {
+		if _, ok := c.Providers[p]; !ok {
+			return fmt.Errorf("%s: unknown provider '%s' (not defined in [providers])", themeName, p)
 		}
-		ids[ds.ID] = true
+	}
 
-		// Validate based on type
-		switch ds.Type {
-		case DatasourceTypeLocal:
-			if ds.Dir == "" {
-				return fmt.Errorf("%s.datasource[%d]: local datasource requires 'dir'", themeName, i)
+	// Check if theme has remote providers configured
+	hasRemote := false
+	if len(theme.Providers) == 0 {
+		// No restriction - check if any remote provider exists
+		for name := range c.Providers {
+			if name != "local" {
+				hasRemote = true
+				break
 			}
-		case DatasourceTypeRemote:
-			if ds.Provider == "" {
-				return fmt.Errorf("%s.datasource[%d]: remote datasource requires 'provider'", themeName, i)
+		}
+	} else {
+		// Check restricted providers
+		for _, p := range theme.Providers {
+			if p != "local" {
+				hasRemote = true
+				break
 			}
-			switch ds.Provider {
-			case ProviderUnsplash, ProviderWallhaven, ProviderGeneric:
-				// Valid
-			default:
-				return fmt.Errorf("%s.datasource[%d]: unknown provider: %s", themeName, i, ds.Provider)
-			}
-		default:
-			return fmt.Errorf("%s.datasource[%d]: unknown type: %s", themeName, i, ds.Type)
+		}
+	}
+
+	// Validate upload-dir and queries when remote providers are used
+	if hasRemote {
+		if theme.UploadDir == "" {
+			return fmt.Errorf("%s: upload-dir is required when using remote providers", themeName)
+		}
+		if len(theme.Queries) == 0 {
+			return fmt.Errorf("%s: queries are required when using remote providers", themeName)
 		}
 	}
 
 	return nil
+}
+
+func isValidProvider(name string) bool {
+	switch ProviderType(name) {
+	case ProviderUnsplash, ProviderWallhaven, ProviderLocal:
+		return true
+	}
+	return false
 }
 
 // GetThemeConfig returns the configuration for the specified theme.
@@ -292,52 +249,57 @@ func (c *Config) GetThemeConfig(theme ThemeMode) *ThemeConfig {
 
 // GetUploadDir returns the upload directory for the specified theme.
 func (c *Config) GetUploadDir(theme ThemeMode) string {
-	themeConfig := c.GetThemeConfig(theme)
-	if themeConfig.UploadDir != "" {
-		return themeConfig.UploadDir
-	}
-	return c.UploadDir
+	return c.GetThemeConfig(theme).UploadDir
 }
 
-// GetAllDatasources returns all datasources from both themes.
-func (c *Config) GetAllDatasources() []struct {
-	Theme      ThemeMode
-	Datasource Datasource
-} {
-	var result []struct {
-		Theme      ThemeMode
-		Datasource Datasource
+// GetLocalDirs returns local directories for the specified theme.
+func (c *Config) GetLocalDirs(theme ThemeMode) []string {
+	return c.GetThemeConfig(theme).Dirs
+}
+
+// GetQueries returns search queries for the specified theme.
+func (c *Config) GetQueries(theme ThemeMode) []string {
+	return c.GetThemeConfig(theme).Queries
+}
+
+// GetRemoteProviders returns remote providers available for the specified theme.
+func (c *Config) GetRemoteProviders(theme ThemeMode) map[string]ProviderConfig {
+	themeConfig := c.GetThemeConfig(theme)
+	result := make(map[string]ProviderConfig)
+
+	allowedProviders := themeConfig.Providers
+	if len(allowedProviders) == 0 {
+		// All providers except local
+		for name, p := range c.Providers {
+			if name != "local" {
+				result[name] = p
+			}
+		}
+		return result
 	}
 
-	for _, ds := range c.Light.Datasources {
-		result = append(result, struct {
-			Theme      ThemeMode
-			Datasource Datasource
-		}{ThemeModeLight, ds})
+	for _, name := range allowedProviders {
+		if name == "local" {
+			continue
+		}
+		if p, ok := c.Providers[name]; ok {
+			result[name] = p
+		}
 	}
-	for _, ds := range c.Dark.Datasources {
-		result = append(result, struct {
-			Theme      ThemeMode
-			Datasource Datasource
-		}{ThemeModeDark, ds})
-	}
-
 	return result
 }
 
-// FindDatasource finds a datasource by ID across all themes.
-func (c *Config) FindDatasource(id string) (*Datasource, ThemeMode, error) {
-	for i := range c.Light.Datasources {
-		if c.Light.Datasources[i].ID == id {
-			return &c.Light.Datasources[i], ThemeModeLight, nil
-		}
+// GetLocalConfig returns local provider configuration.
+func (c *Config) GetLocalConfig() ProviderConfig {
+	if p, ok := c.Providers["local"]; ok {
+		return p
 	}
-	for i := range c.Dark.Datasources {
-		if c.Dark.Datasources[i].ID == id {
-			return &c.Dark.Datasources[i], ThemeModeDark, nil
-		}
-	}
-	return nil, "", fmt.Errorf("datasource not found: %s", id)
+	return ProviderConfig{Recursive: true}
+}
+
+// IsLocalEnabled returns true if local directories are configured for the theme.
+func (c *Config) IsLocalEnabled(theme ThemeMode) bool {
+	return len(c.GetLocalDirs(theme)) > 0
 }
 
 // ConfigPath returns the path to the config file.
@@ -356,7 +318,6 @@ func (c *Config) Save(path string) error {
 
 	path = expandPath(path)
 
-	// Ensure directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
@@ -376,70 +337,10 @@ func (c *Config) Save(path string) error {
 	return nil
 }
 
-// WriteDefaultConfig writes the default configuration to a file.
-func WriteDefaultConfig(path string) error {
-	cfg := DefaultConfig()
-	return cfg.Save(path)
-}
-
-// expandPath expands ~ to home directory.
-func expandPath(path string) string {
-	if path == "" {
-		return ""
-	}
-	if strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return path
-		}
-		return filepath.Join(home, path[2:])
-	}
-	return path
-}
-
-// expandEnv expands environment variables in a string.
-// Supports formats: ${VAR}, $VAR, ${VAR:-default}
-func expandEnv(s string) string {
-	if s == "" {
-		return ""
-	}
-
-	// Check for ${VAR} or ${VAR:-default} format
-	if strings.HasPrefix(s, "${") && strings.HasSuffix(s, "}") {
-		inner := s[2 : len(s)-1]
-
-		// Check for default value syntax: ${VAR:-default}
-		if idx := strings.Index(inner, ":-"); idx != -1 {
-			varName := inner[:idx]
-			defaultVal := inner[idx+2:]
-			if val := os.Getenv(varName); val != "" {
-				return val
-			}
-			return defaultVal
-		}
-
-		// Simple ${VAR} format
-		return os.Getenv(inner)
-	}
-
-	// Check for $VAR format (must be entire string)
-	if strings.HasPrefix(s, "$") && !strings.Contains(s, " ") {
-		varName := s[1:]
-		if val := os.Getenv(varName); val != "" {
-			return val
-		}
-		return ""
-	}
-
-	// Return as-is if no env var pattern
-	return s
-}
-
 // EnsureDirectories creates all necessary directories.
 func (c *Config) EnsureDirectories() error {
 	dirs := []string{
 		filepath.Dir(c.State.Path),
-		c.UploadDir,
 		c.Light.UploadDir,
 		c.Dark.UploadDir,
 		GetTempDir(),
@@ -460,4 +361,47 @@ func (c *Config) EnsureDirectories() error {
 // GetTempDir returns the system temp directory for wallboy.
 func GetTempDir() string {
 	return filepath.Join(os.TempDir(), "wallboy")
+}
+
+// expandPath expands ~ to home directory.
+func expandPath(path string) string {
+	if path == "" {
+		return ""
+	}
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return path
+		}
+		return filepath.Join(home, path[2:])
+	}
+	return path
+}
+
+// expandEnv expands environment variables in a string.
+func expandEnv(s string) string {
+	if s == "" {
+		return ""
+	}
+
+	if strings.HasPrefix(s, "${") && strings.HasSuffix(s, "}") {
+		inner := s[2 : len(s)-1]
+
+		if idx := strings.Index(inner, ":-"); idx != -1 {
+			varName := inner[:idx]
+			defaultVal := inner[idx+2:]
+			if val := os.Getenv(varName); val != "" {
+				return val
+			}
+			return defaultVal
+		}
+
+		return os.Getenv(inner)
+	}
+
+	if strings.HasPrefix(s, "$") && !strings.Contains(s, " ") {
+		return os.Getenv(s[1:])
+	}
+
+	return s
 }

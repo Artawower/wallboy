@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/Artawower/wallboy/internal/config"
 )
 
 // SupportedExtensions are the image file extensions we support.
@@ -27,32 +25,18 @@ type Image struct {
 	SourceID string
 	Theme    string
 	IsLocal  bool
-	URL      string // For remote images not yet downloaded
+	URL      string
 }
 
-// Source is the interface for image sources.
-type Source interface {
-	// ID returns the unique identifier for this source.
-	ID() string
+// SourceType represents the type of source.
+type SourceType string
 
-	// Type returns the type of datasource (local/remote).
-	Type() config.DatasourceType
+const (
+	SourceTypeLocal  SourceType = "local"
+	SourceTypeRemote SourceType = "remote"
+)
 
-	// Theme returns the theme this source belongs to.
-	Theme() string
-
-	// ListImages returns all available images from this source.
-	ListImages(ctx context.Context) ([]Image, error)
-
-	// Sync downloads/updates images from remote sources.
-	// For local sources, this is a no-op.
-	Sync(ctx context.Context, progress func(current, total int)) error
-
-	// Description returns a human-readable description of the source.
-	Description() string
-}
-
-// LocalSource implements Source for local directories.
+// LocalSource represents a local directory source.
 type LocalSource struct {
 	id        string
 	dir       string
@@ -60,35 +44,20 @@ type LocalSource struct {
 	theme     string
 }
 
-// NewLocalSource creates a new local datasource.
-func NewLocalSource(cfg config.Datasource, theme string) *LocalSource {
+// NewLocalSource creates a new local source.
+func NewLocalSource(id, dir, theme string, recursive bool) *LocalSource {
 	return &LocalSource{
-		id:        cfg.ID,
-		dir:       cfg.Dir,
-		recursive: cfg.Recursive,
+		id:        id,
+		dir:       dir,
+		recursive: recursive,
 		theme:     theme,
 	}
 }
 
-// ID returns the source ID.
-func (s *LocalSource) ID() string {
-	return s.id
-}
-
-// Type returns the datasource type.
-func (s *LocalSource) Type() config.DatasourceType {
-	return config.DatasourceTypeLocal
-}
-
-// Theme returns the theme.
-func (s *LocalSource) Theme() string {
-	return s.theme
-}
-
-// Description returns a human-readable description.
-func (s *LocalSource) Description() string {
-	return s.dir
-}
+func (s *LocalSource) ID() string          { return s.id }
+func (s *LocalSource) Type() SourceType    { return SourceTypeLocal }
+func (s *LocalSource) Theme() string       { return s.theme }
+func (s *LocalSource) Description() string { return s.dir }
 
 // ListImages returns all images from the local directory.
 func (s *LocalSource) ListImages(ctx context.Context) ([]Image, error) {
@@ -103,23 +72,19 @@ func (s *LocalSource) ListImages(ctx context.Context) ([]Image, error) {
 			return err
 		}
 
-		// Check context cancellation
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
 
-		// Skip directories
 		if info.IsDir() {
-			// Skip subdirectories if not recursive
 			if !s.recursive && path != s.dir {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
-		// Check if it's a supported image
 		ext := strings.ToLower(filepath.Ext(path))
 		if !SupportedExtensions[ext] {
 			return nil
@@ -142,262 +107,212 @@ func (s *LocalSource) ListImages(ctx context.Context) ([]Image, error) {
 	return images, nil
 }
 
-// Sync is a no-op for local sources.
-func (s *LocalSource) Sync(ctx context.Context, progress func(current, total int)) error {
-	return nil
-}
-
-// Manager manages multiple datasources.
+// Manager manages image sources and selection.
 type Manager struct {
-	sources   []Source
-	uploadDir string
-	tempDir   string
-	rng       *rand.Rand
+	localSources  []*LocalSource
+	remoteSources []*RemoteSource
+	uploadDir     string
+	tempDir       string
+	rng           *rand.Rand
 }
 
 // NewManager creates a new datasource manager.
 func NewManager(uploadDir, tempDir string) *Manager {
 	return &Manager{
-		sources:   []Source{},
 		uploadDir: uploadDir,
 		tempDir:   tempDir,
 		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
-// TempDir returns the temp directory path.
-func (m *Manager) TempDir() string {
-	return m.tempDir
+func (m *Manager) TempDir() string   { return m.tempDir }
+func (m *Manager) UploadDir() string { return m.uploadDir }
+
+// AddLocalSource adds a local source.
+func (m *Manager) AddLocalSource(source *LocalSource) {
+	m.localSources = append(m.localSources, source)
 }
 
-// UploadDir returns the upload directory path.
-func (m *Manager) UploadDir() string {
-	return m.uploadDir
+// AddRemoteSource adds a remote source.
+func (m *Manager) AddRemoteSource(source *RemoteSource) {
+	m.remoteSources = append(m.remoteSources, source)
 }
 
-// AddSource adds a source to the manager.
-func (m *Manager) AddSource(source Source) {
-	m.sources = append(m.sources, source)
-}
-
-// GetSources returns all sources.
-func (m *Manager) GetSources() []Source {
-	return m.sources
-}
-
-// GetSourceByID returns a source by ID.
-func (m *Manager) GetSourceByID(id string) (Source, error) {
-	for _, s := range m.sources {
-		if s.ID() == id {
-			return s, nil
-		}
-	}
-	return nil, fmt.Errorf("source not found: %s", id)
-}
-
-// GetSourcesByTheme returns sources for a specific theme.
-func (m *Manager) GetSourcesByTheme(theme string) []Source {
-	var result []Source
-	for _, s := range m.sources {
-		if s.Theme() == theme {
+// GetLocalSources returns all local sources for a theme.
+func (m *Manager) GetLocalSources(theme string) []*LocalSource {
+	var result []*LocalSource
+	for _, s := range m.localSources {
+		if s.theme == theme {
 			result = append(result, s)
 		}
 	}
 	return result
 }
 
-// ListAllImages returns all images from all sources.
-func (m *Manager) ListAllImages(ctx context.Context, theme string) ([]Image, error) {
-	var allImages []Image
-
-	sources := m.GetSourcesByTheme(theme)
-	for _, source := range sources {
-		images, err := source.ListImages(ctx)
-		if err != nil {
-			// Log error but continue with other sources
-			continue
-		}
-		allImages = append(allImages, images...)
-	}
-
-	return allImages, nil
-}
-
-// ListImagesFromSource returns images from a specific source.
-func (m *Manager) ListImagesFromSource(ctx context.Context, sourceID string) ([]Image, error) {
-	source, err := m.GetSourceByID(sourceID)
-	if err != nil {
-		return nil, err
-	}
-	return source.ListImages(ctx)
-}
-
-// PickRandom picks a random image from available images.
-// First randomly selects a datasource, then picks a random image from it.
-func (m *Manager) PickRandom(ctx context.Context, theme string, excludeHistory []string) (*Image, error) {
-	sources := m.GetSourcesByTheme(theme)
-	if len(sources) == 0 {
-		return nil, fmt.Errorf("no datasources available for theme: %s", theme)
-	}
-
-	// Build history set for filtering
-	historySet := make(map[string]bool)
-	for _, h := range excludeHistory {
-		historySet[h] = true
-	}
-
-	// Filter sources that have available images
-	type sourceWithImages struct {
-		source Source
-		images []Image
-	}
-	var availableSources []sourceWithImages
-
-	for _, source := range sources {
-		images, err := source.ListImages(ctx)
-		if err != nil || len(images) == 0 {
-			continue
-		}
-
-		// Filter out history
-		var filtered []Image
-		for _, img := range images {
-			if !historySet[img.Path] {
-				filtered = append(filtered, img)
-			}
-		}
-
-		// If all images in history, use all images from this source
-		if len(filtered) == 0 {
-			filtered = images
-		}
-
-		availableSources = append(availableSources, sourceWithImages{
-			source: source,
-			images: filtered,
-		})
-	}
-
-	if len(availableSources) == 0 {
-		return nil, fmt.Errorf("no images available for theme: %s", theme)
-	}
-
-	// Randomly select a datasource
-	sourceIdx := m.rng.Intn(len(availableSources))
-	selected := availableSources[sourceIdx]
-
-	// Randomly select an image from the chosen datasource
-	imgIdx := m.rng.Intn(len(selected.images))
-	return &selected.images[imgIdx], nil
-}
-
-// PickRandomFromSource picks a random image from a specific source.
-func (m *Manager) PickRandomFromSource(ctx context.Context, sourceID string, excludeHistory []string) (*Image, error) {
-	images, err := m.ListImagesFromSource(ctx, sourceID)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(images) == 0 {
-		return nil, fmt.Errorf("no images available from source: %s", sourceID)
-	}
-
-	// Filter out history if provided
-	if len(excludeHistory) > 0 {
-		historySet := make(map[string]bool)
-		for _, h := range excludeHistory {
-			historySet[h] = true
-		}
-
-		var filtered []Image
-		for _, img := range images {
-			if !historySet[img.Path] {
-				filtered = append(filtered, img)
-			}
-		}
-
-		if len(filtered) > 0 {
-			images = filtered
-		}
-	}
-
-	idx := m.rng.Intn(len(images))
-	return &images[idx], nil
-}
-
-// FetchRandomFromRemote fetches a random image from a remote source.
-// Downloads to temp directory.
-// If queryOverride is not empty, it will be used instead of configured queries.
-func (m *Manager) FetchRandomFromRemote(ctx context.Context, sourceID, queryOverride string) (*Image, error) {
-	source, err := m.GetSourceByID(sourceID)
-	if err != nil {
-		return nil, err
-	}
-
-	remote, ok := source.(*RemoteSource)
-	if !ok {
-		return nil, fmt.Errorf("source %s is not a remote source", sourceID)
-	}
-
-	return remote.FetchRandom(ctx, queryOverride)
-}
-
-// SaveCurrentImage saves an image from temp to upload directory.
-func (m *Manager) SaveCurrentImage(sourceID, tempPath string) (string, error) {
-	source, err := m.GetSourceByID(sourceID)
-	if err != nil {
-		return "", err
-	}
-
-	remote, ok := source.(*RemoteSource)
-	if !ok {
-		return "", fmt.Errorf("source %s is not a remote source", sourceID)
-	}
-
-	return remote.Save(tempPath)
-}
-
-// GetRemoteSource returns a remote source by ID.
-func (m *Manager) GetRemoteSource(sourceID string) (*RemoteSource, error) {
-	source, err := m.GetSourceByID(sourceID)
-	if err != nil {
-		return nil, err
-	}
-
-	remote, ok := source.(*RemoteSource)
-	if !ok {
-		return nil, fmt.Errorf("source %s is not a remote source", sourceID)
-	}
-
-	return remote, nil
-}
-
-// HasRemoteSources returns true if there are any remote sources for the theme.
-func (m *Manager) HasRemoteSources(theme string) bool {
-	for _, s := range m.GetSourcesByTheme(theme) {
-		if s.Type() == config.DatasourceTypeRemote {
-			return true
-		}
-	}
-	return false
-}
-
-// GetRemoteSourcesForTheme returns all remote sources for a theme.
-func (m *Manager) GetRemoteSourcesForTheme(theme string) []*RemoteSource {
+// GetRemoteSources returns all remote sources for a theme.
+func (m *Manager) GetRemoteSources(theme string) []*RemoteSource {
 	var result []*RemoteSource
-	for _, s := range m.GetSourcesByTheme(theme) {
-		if remote, ok := s.(*RemoteSource); ok {
-			result = append(result, remote)
+	for _, s := range m.remoteSources {
+		if s.theme == theme {
+			result = append(result, s)
 		}
 	}
 	return result
 }
 
-// CleanupTemp removes temporary files from all remote sources.
-func (m *Manager) CleanupTemp() {
-	for _, s := range m.sources {
-		if remote, ok := s.(*RemoteSource); ok {
-			_ = remote.CleanTemp()
+// GetLocalSourceByID returns a local source by ID.
+func (m *Manager) GetLocalSourceByID(id string) (*LocalSource, error) {
+	for _, s := range m.localSources {
+		if s.id == id {
+			return s, nil
 		}
+	}
+	return nil, fmt.Errorf("local source not found: %s", id)
+}
+
+// GetRemoteSourceByID returns a remote source by ID.
+func (m *Manager) GetRemoteSourceByID(id string) (*RemoteSource, error) {
+	for _, s := range m.remoteSources {
+		if s.id == id {
+			return s, nil
+		}
+	}
+	return nil, fmt.Errorf("remote source not found: %s", id)
+}
+
+// HasLocalSources returns true if there are local sources for the theme.
+func (m *Manager) HasLocalSources(theme string) bool {
+	return len(m.GetLocalSources(theme)) > 0
+}
+
+// HasRemoteSources returns true if there are remote sources for the theme.
+func (m *Manager) HasRemoteSources(theme string) bool {
+	return len(m.GetRemoteSources(theme)) > 0
+}
+
+// PickRandomLocal picks a random image from local sources.
+func (m *Manager) PickRandomLocal(ctx context.Context, theme string, excludeHistory []string) (*Image, error) {
+	sources := m.GetLocalSources(theme)
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("no local sources for theme: %s", theme)
+	}
+
+	historySet := make(map[string]bool)
+	for _, h := range excludeHistory {
+		historySet[h] = true
+	}
+
+	type sourceImages struct {
+		source *LocalSource
+		images []Image
+	}
+	var available []sourceImages
+	var lastErr error
+
+	for _, source := range sources {
+		images, err := source.ListImages(ctx)
+		if err != nil {
+			lastErr = fmt.Errorf("source %s: %w", source.ID(), err)
+			continue
+		}
+		if len(images) == 0 {
+			continue
+		}
+
+		var filtered []Image
+		for _, img := range images {
+			if !historySet[img.Path] {
+				filtered = append(filtered, img)
+			}
+		}
+
+		if len(filtered) == 0 {
+			filtered = images
+		}
+
+		available = append(available, sourceImages{source: source, images: filtered})
+	}
+
+	if len(available) == 0 {
+		if lastErr != nil {
+			return nil, fmt.Errorf("no images available for theme %s: %w", theme, lastErr)
+		}
+		return nil, fmt.Errorf("no images available for theme: %s", theme)
+	}
+
+	sourceIdx := m.rng.Intn(len(available))
+	selected := available[sourceIdx]
+
+	imgIdx := m.rng.Intn(len(selected.images))
+	return &selected.images[imgIdx], nil
+}
+
+// PickRandomFromLocalSource picks a random image from a specific local source.
+func (m *Manager) PickRandomFromLocalSource(ctx context.Context, sourceID string, excludeHistory []string) (*Image, error) {
+	source, err := m.GetLocalSourceByID(sourceID)
+	if err != nil {
+		return nil, err
+	}
+
+	images, err := source.ListImages(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list images: %w", err)
+	}
+
+	if len(images) == 0 {
+		return nil, fmt.Errorf("no images in source: %s", sourceID)
+	}
+
+	historySet := make(map[string]bool)
+	for _, h := range excludeHistory {
+		historySet[h] = true
+	}
+
+	var filtered []Image
+	for _, img := range images {
+		if !historySet[img.Path] {
+			filtered = append(filtered, img)
+		}
+	}
+
+	if len(filtered) == 0 {
+		filtered = images
+	}
+
+	idx := m.rng.Intn(len(filtered))
+	return &filtered[idx], nil
+}
+
+// FetchRandomRemote fetches a random image from remote sources.
+func (m *Manager) FetchRandomRemote(ctx context.Context, theme, queryOverride string) (*Image, error) {
+	sources := m.GetRemoteSources(theme)
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("no remote sources for theme: %s", theme)
+	}
+
+	// Shuffle for random selection
+	shuffled := make([]*RemoteSource, len(sources))
+	copy(shuffled, sources)
+	m.rng.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+
+	// Try each source until success
+	var lastErr error
+	for _, source := range shuffled {
+		img, err := source.FetchRandom(ctx, queryOverride)
+		if err == nil {
+			return img, nil
+		}
+		lastErr = err
+	}
+
+	return nil, fmt.Errorf("failed to fetch from remote: %w", lastErr)
+}
+
+// CleanupTemp removes temporary files.
+func (m *Manager) CleanupTemp() {
+	for _, s := range m.remoteSources {
+		_ = s.CleanTemp()
 	}
 }

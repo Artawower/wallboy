@@ -170,7 +170,6 @@ func newInitCmd() *cobra.Command {
 			out.Success("Wallboy initialized")
 			out.Field("Config", configPath)
 			out.Field("State", cfg.State.Path)
-			out.Field("Saved", cfg.UploadDir)
 			out.Field("Temp", config.GetTempDir())
 			out.Print("")
 			out.Info("Edit %s to configure datasources", configPath)
@@ -489,36 +488,28 @@ func newSourcesCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			initOutput()
 
-			// Load config directly for sources list (no engine needed)
-			cfg, err := config.Load(cfgFile)
+			engine, err := newEngine()
 			if err != nil {
 				out.Error("Failed to load config: %v", err)
 				return err
 			}
 
-			allSources := cfg.GetAllDatasources()
-			if len(allSources) == 0 {
-				out.Warning("No datasources configured")
-				out.Info("Edit your config file to add datasources")
+			sources := engine.ListSources()
+			if len(sources) == 0 {
+				out.Warning("No sources configured")
+				out.Info("Edit your config file to add sources")
 				return nil
 			}
 
-			headers := []string{"ID", "Theme", "Type", "Provider / Path"}
+			headers := []string{"ID", "Theme", "Type", "Description"}
 			var rows [][]string
 
-			for _, s := range allSources {
-				desc := ""
-				if s.Datasource.Type == config.DatasourceTypeLocal {
-					desc = shortenPath(s.Datasource.Dir)
-				} else {
-					desc = string(s.Datasource.Provider)
-				}
-
+			for _, s := range sources {
 				rows = append(rows, []string{
-					s.Datasource.ID,
-					string(s.Theme),
-					string(s.Datasource.Type),
-					desc,
+					s.ID,
+					s.Theme,
+					s.Type,
+					shortenPath(s.Description),
 				})
 			}
 

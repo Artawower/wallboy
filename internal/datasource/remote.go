@@ -1,4 +1,3 @@
-// Package datasource provides remote source implementation.
 package datasource
 
 import (
@@ -7,13 +6,13 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"github.com/Artawower/wallboy/internal/config"
 	"github.com/Artawower/wallboy/internal/provider"
 )
 
-// RemoteSource implements Source for remote providers.
+// RemoteSource represents a remote image provider.
 type RemoteSource struct {
 	id        string
 	provider  provider.Provider
@@ -24,14 +23,14 @@ type RemoteSource struct {
 	rng       *rand.Rand
 }
 
-// NewRemoteSource creates a new remote datasource.
-func NewRemoteSource(cfg config.Datasource, theme, uploadDir, tempDir string) *RemoteSource {
-	p := provider.NewProvider(string(cfg.Provider), cfg.Auth, nil)
+// NewRemoteSource creates a new remote source.
+func NewRemoteSource(id, providerName, auth, theme, uploadDir, tempDir string, queries []string) *RemoteSource {
+	p := provider.NewProvider(providerName, auth, nil)
 
 	return &RemoteSource{
-		id:        cfg.ID,
+		id:        id,
 		provider:  p,
-		queries:   cfg.Queries,
+		queries:   queries,
 		uploadDir: uploadDir,
 		tempDir:   tempDir,
 		theme:     theme,
@@ -39,22 +38,12 @@ func NewRemoteSource(cfg config.Datasource, theme, uploadDir, tempDir string) *R
 	}
 }
 
-// ID returns the source ID.
-func (s *RemoteSource) ID() string {
-	return s.id
-}
+func (s *RemoteSource) ID() string        { return s.id }
+func (s *RemoteSource) Type() SourceType  { return SourceTypeRemote }
+func (s *RemoteSource) Theme() string     { return s.theme }
+func (s *RemoteSource) UploadDir() string { return s.uploadDir }
+func (s *RemoteSource) TempDir() string   { return s.tempDir }
 
-// Type returns the datasource type.
-func (s *RemoteSource) Type() config.DatasourceType {
-	return config.DatasourceTypeRemote
-}
-
-// Theme returns the theme.
-func (s *RemoteSource) Theme() string {
-	return s.theme
-}
-
-// Description returns a human-readable description.
 func (s *RemoteSource) Description() string {
 	if s.provider != nil {
 		return s.provider.Name()
@@ -66,12 +55,10 @@ func (s *RemoteSource) Description() string {
 func (s *RemoteSource) ListImages(ctx context.Context) ([]Image, error) {
 	var images []Image
 
-	// Check if upload directory exists
 	if _, err := os.Stat(s.uploadDir); os.IsNotExist(err) {
 		return images, nil
 	}
 
-	// Walk the upload directory
 	err := filepath.Walk(s.uploadDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -87,8 +74,7 @@ func (s *RemoteSource) ListImages(ctx context.Context) ([]Image, error) {
 			return nil
 		}
 
-		// Check if it's a supported image
-		ext := filepath.Ext(path)
+		ext := strings.ToLower(filepath.Ext(path))
 		if !SupportedExtensions[ext] {
 			return nil
 		}
@@ -111,42 +97,33 @@ func (s *RemoteSource) ListImages(ctx context.Context) ([]Image, error) {
 }
 
 // FetchRandom fetches a random image from remote and downloads to temp directory.
-// Returns the temporary path to the downloaded image.
-// If queryOverride is not empty, it will be used instead of configured queries.
 func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*Image, error) {
 	if s.provider == nil {
 		return nil, fmt.Errorf("no provider configured")
 	}
 
-	// Ensure temp directory exists
 	if err := os.MkdirAll(s.tempDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	// Use override or configured queries
 	queries := s.queries
 	if queryOverride != "" {
 		queries = []string{queryOverride}
 	}
 
-	// Search for images
 	metas, err := s.provider.Search(ctx, queries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to search images: %w", err)
 	}
 
 	if len(metas) == 0 {
-		return nil, fmt.Errorf("no images found for queries: %v", s.queries)
+		return nil, fmt.Errorf("no images found for queries: %v", queries)
 	}
 
-	// Pick random image
 	idx := s.rng.Intn(len(metas))
 	meta := metas[idx]
 
-	// Download to temp directory
 	tempPath := s.getTempPath(meta)
-
-	// Remove old temp file if exists
 	os.Remove(tempPath)
 
 	downloadedPath, err := s.provider.Download(ctx, meta, tempPath)
@@ -165,7 +142,6 @@ func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*
 
 // Save moves an image from temp to upload directory.
 func (s *RemoteSource) Save(tempPath string) (string, error) {
-	// Ensure upload directory exists
 	if err := os.MkdirAll(s.uploadDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create upload directory: %w", err)
 	}
@@ -173,9 +149,7 @@ func (s *RemoteSource) Save(tempPath string) (string, error) {
 	filename := filepath.Base(tempPath)
 	destPath := filepath.Join(s.uploadDir, filename)
 
-	// Move file
 	if err := os.Rename(tempPath, destPath); err != nil {
-		// If rename fails (cross-device), try copy+delete
 		if err := copyFile(tempPath, destPath); err != nil {
 			return "", fmt.Errorf("failed to save image: %w", err)
 		}
@@ -206,7 +180,6 @@ func (s *RemoteSource) CleanTemp() error {
 	return nil
 }
 
-// getTempPath returns the temp path for an image.
 func (s *RemoteSource) getTempPath(meta provider.ImageMeta) string {
 	ext := filepath.Ext(meta.DownloadURL)
 	if ext == "" || len(ext) > 5 {
@@ -215,26 +188,10 @@ func (s *RemoteSource) getTempPath(meta provider.ImageMeta) string {
 	return filepath.Join(s.tempDir, fmt.Sprintf("%s_%s%s", s.provider.Name(), meta.ID, ext))
 }
 
-// Sync is not used in the new flow - kept for interface compatibility.
-func (s *RemoteSource) Sync(ctx context.Context, progress func(current, total int)) error {
-	return nil
-}
-
-// copyFile copies a file from src to dst.
 func copyFile(src, dst string) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(dst, data, 0644)
-}
-
-// UploadDir returns the upload directory path.
-func (s *RemoteSource) UploadDir() string {
-	return s.uploadDir
-}
-
-// TempDir returns the temp directory path.
-func (s *RemoteSource) TempDir() string {
-	return s.tempDir
 }
