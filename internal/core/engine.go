@@ -242,27 +242,45 @@ func (e *Engine) pickNextImage(ctx context.Context, themeName string) (*datasour
 		useRemote = true
 	}
 
-	// Remote: always fetch new image
+	// Remote: always fetch new image, with fallback to other sources
 	if useRemote {
-		remote := remoteSources[rand.Intn(len(remoteSources))]
-		img, err := remote.FetchRandom(ctx)
-		if err != nil {
-			return nil, false, fmt.Errorf("failed to fetch from remote: %w", err)
+		// Shuffle remote sources for random order
+		shuffledRemotes := make([]*datasource.RemoteSource, len(remoteSources))
+		copy(shuffledRemotes, remoteSources)
+		rand.Shuffle(len(shuffledRemotes), func(i, j int) {
+			shuffledRemotes[i], shuffledRemotes[j] = shuffledRemotes[j], shuffledRemotes[i]
+		})
+
+		// Try each remote source
+		var lastErr error
+		for _, remote := range shuffledRemotes {
+			img, err := remote.FetchRandom(ctx)
+			if err == nil {
+				return img, true, nil
+			}
+			lastErr = err
 		}
-		return img, true, nil
+
+		// All remotes failed, fallback to local if available
+		if len(localSources) > 0 {
+			img, err := e.manager.PickRandom(ctx, themeName, e.state.History)
+			if err == nil {
+				return img, false, nil
+			}
+		}
+
+		return nil, false, fmt.Errorf("failed to fetch from remote: %w", lastErr)
 	}
 
 	// Local: pick from existing images
 	img, err := e.manager.PickRandom(ctx, themeName, e.state.History)
 	if err != nil {
 		// No local images, try remote as fallback
-		if len(remoteSources) > 0 {
-			remote := remoteSources[0]
+		for _, remote := range remoteSources {
 			img, err := remote.FetchRandom(ctx)
-			if err != nil {
-				return nil, false, fmt.Errorf("failed to fetch from remote: %w", err)
+			if err == nil {
+				return img, true, nil
 			}
-			return img, true, nil
 		}
 		return nil, false, fmt.Errorf("failed to pick image: %w", err)
 	}
