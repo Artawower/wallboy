@@ -1,10 +1,13 @@
 package core
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/Artawower/wallboy/internal/state"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestColor_Hex(t *testing.T) {
@@ -154,4 +157,78 @@ func TestWithQueryOverride(t *testing.T) {
 			assert.Equal(t, tt.expected, e.queryOverride)
 		})
 	}
+}
+
+func TestEngine_getWallpaperPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	statePath := filepath.Join(tmpDir, "state.json")
+
+	t.Run("returns state path when available", func(t *testing.T) {
+		st := state.New(statePath)
+		st.SetCurrent("/path/to/wallpaper.jpg", "source-1", "dark", false)
+
+		e := &Engine{state: st}
+
+		path := e.getWallpaperPath()
+		assert.Equal(t, "/path/to/wallpaper.jpg", path)
+	})
+
+	t.Run("returns empty when no state and no platform", func(t *testing.T) {
+		st := state.New(statePath)
+		// No current set, no platform
+
+		e := &Engine{state: st}
+
+		path := e.getWallpaperPath()
+		assert.Empty(t, path)
+	})
+}
+
+func TestEngine_OpenInFinder(t *testing.T) {
+	tmpDir := t.TempDir()
+	statePath := filepath.Join(tmpDir, "state.json")
+
+	t.Run("error when no wallpaper path", func(t *testing.T) {
+		st := state.New(statePath)
+		e := &Engine{state: st}
+
+		err := e.OpenInFinder()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no wallpaper path available")
+	})
+
+	t.Run("error when file does not exist", func(t *testing.T) {
+		st := state.New(statePath)
+		st.SetCurrent("/nonexistent/wallpaper.jpg", "source-1", "dark", false)
+		e := &Engine{state: st}
+
+		err := e.OpenInFinder()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no longer exists")
+	})
+}
+
+func TestEngine_OpenImage(t *testing.T) {
+	tmpDir := t.TempDir()
+	statePath := filepath.Join(tmpDir, "state.json")
+
+	t.Run("error when no wallpaper path", func(t *testing.T) {
+		st := state.New(statePath)
+		e := &Engine{state: st}
+
+		err := e.OpenImage()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no wallpaper path available")
+	})
+
+	t.Run("error when file does not exist", func(t *testing.T) {
+		st := state.New(statePath)
+		st.SetCurrent("/nonexistent/wallpaper.jpg", "source-1", "dark", false)
+		e := &Engine{state: st}
+
+		err := e.OpenImage()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no longer exists")
+	})
+
 }

@@ -32,9 +32,8 @@ func (s *WallpaperService) Set(path string) error {
 }
 
 // Get returns the current desktop wallpaper path.
-// Uses Finder which is more reliable across multiple desktops/displays.
 func (s *WallpaperService) Get() (string, error) {
-	script := `tell application "Finder" to get POSIX path of (desktop picture as alias)`
+	script := `tell application "System Events" to get picture of first desktop`
 
 	cmd := exec.Command("osascript", "-e", script)
 	output, err := cmd.Output()

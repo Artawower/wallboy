@@ -412,18 +412,42 @@ func (e *Engine) GetCurrentWallpaperPath() (string, error) {
 	return e.platform.Wallpaper().Get()
 }
 
-func (e *Engine) OpenInFinder() error {
+// getWallpaperPath returns the best known wallpaper path.
+// Prefers state path (if exists), falls back to system query.
+func (e *Engine) getWallpaperPath() string {
+	// First try state - it's more reliable
+	if e.state != nil && e.state.HasCurrent() {
+		return e.state.Current.Path
+	}
+	// Fall back to system
+	if e.platform == nil {
+		return ""
+	}
 	path, err := e.platform.Wallpaper().Get()
 	if err != nil {
-		return fmt.Errorf("failed to get current wallpaper: %w", err)
+		return ""
+	}
+	return path
+}
+
+func (e *Engine) OpenInFinder() error {
+	path := e.getWallpaperPath()
+	if path == "" {
+		return fmt.Errorf("no wallpaper path available")
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return fmt.Errorf("wallpaper file no longer exists: %s", path)
 	}
 	return e.platform.FileManager().Reveal(path)
 }
 
 func (e *Engine) OpenImage() error {
-	path, err := e.platform.Wallpaper().Get()
-	if err != nil {
-		return fmt.Errorf("failed to get current wallpaper: %w", err)
+	path := e.getWallpaperPath()
+	if path == "" {
+		return fmt.Errorf("no wallpaper path available")
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return fmt.Errorf("wallpaper file no longer exists: %s", path)
 	}
 	return e.platform.FileManager().Open(path)
 }
