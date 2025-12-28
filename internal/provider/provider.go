@@ -123,6 +123,11 @@ func (p *UnsplashProvider) Name() string {
 func (p *UnsplashProvider) Search(ctx context.Context, queries []string) ([]ImageMeta, error) {
 	var allResults []ImageMeta
 
+	// Default query if none provided
+	if len(queries) == 0 {
+		queries = []string{"wallpaper"}
+	}
+
 	perQuery := DefaultSearchLimit / len(queries)
 	if perQuery < 1 {
 		perQuery = 1
@@ -241,6 +246,11 @@ func (p *WallhavenProvider) Name() string {
 // Search searches for images on Wallhaven.
 func (p *WallhavenProvider) Search(ctx context.Context, queries []string) ([]ImageMeta, error) {
 	var allResults []ImageMeta
+
+	// Default query if none provided
+	if len(queries) == 0 {
+		queries = []string{"wallpaper"}
+	}
 
 	perQuery := DefaultSearchLimit / len(queries)
 	if perQuery < 1 {
