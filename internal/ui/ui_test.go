@@ -286,7 +286,7 @@ func TestOutput_WallpaperInfo(t *testing.T) {
 	o := NewOutput(&buf)
 
 	now := time.Now()
-	o.WallpaperInfo("light", "local", "/path/to/image.jpg", now)
+	o.WallpaperInfo("light", "local", "/path/to/image.jpg", "", now)
 
 	output := buf.String()
 	assert.Contains(t, output, "Wallpaper set")
@@ -303,7 +303,7 @@ func TestOutput_WallpaperInfo_NoTime(t *testing.T) {
 	var buf bytes.Buffer
 	o := NewOutput(&buf)
 
-	o.WallpaperInfo("dark", "remote", "/path/to/image.jpg", time.Time{})
+	o.WallpaperInfo("dark", "remote", "/path/to/image.jpg", "", time.Time{})
 
 	output := buf.String()
 	assert.Contains(t, output, "dark")

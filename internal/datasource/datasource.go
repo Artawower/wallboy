@@ -26,6 +26,21 @@ type Image struct {
 	Theme    string
 	IsLocal  bool
 	URL      string
+	Query    string // Query used to fetch this image (for remote sources)
+}
+
+// PrefetchStore provides storage for prefetched wallpapers per source.
+// This interface allows state management to be decoupled from the datasource package.
+type PrefetchStore interface {
+	// GetPrefetch returns the prefetched image path and query for a source, if available.
+	// Returns empty strings and false if no valid prefetch exists.
+	GetPrefetch(sourceID string) (path, query string, ok bool)
+	// SetPrefetch stores a prefetched image path and query for a source.
+	SetPrefetch(sourceID, path, query string)
+	// ClearPrefetch removes the prefetched entry for a source.
+	ClearPrefetch(sourceID string)
+	// Save persists the prefetch state.
+	Save() error
 }
 
 // SourceType represents the type of source.
@@ -333,5 +348,12 @@ func (m *Manager) FetchRandomRemote(ctx context.Context, theme, queryOverride st
 func (m *Manager) CleanupTemp() {
 	for _, s := range m.remoteSources {
 		_ = s.CleanTemp()
+	}
+}
+
+// WaitPrefetch waits for all background prefetch operations to complete.
+func (m *Manager) WaitPrefetch() {
+	for _, s := range m.remoteSources {
+		s.WaitPrefetch()
 	}
 }

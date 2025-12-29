@@ -23,6 +23,9 @@ type WallpaperResult struct {
 
 	// SetAt is when the wallpaper was set.
 	SetAt time.Time
+
+	// Query is the search query used to fetch this image (for remote sources).
+	Query string
 }
 
 // WallpaperInfo contains detailed information about the current wallpaper.
@@ -44,6 +47,9 @@ type WallpaperInfo struct {
 
 	// Exists indicates if the file still exists on disk.
 	Exists bool
+
+	// Query is the search query used to fetch this image (for remote sources).
+	Query string
 }
 
 // SourceInfo contains information about a datasource.

@@ -57,6 +57,7 @@ func TestNewRemoteSource(t *testing.T) {
 		"/upload",
 		"/temp",
 		[]string{"nature", "landscape"},
+		nil, // no prefetch store
 	)
 
 	assert.Equal(t, "test-remote", source.ID())
@@ -76,6 +77,7 @@ func TestRemoteSource_Description(t *testing.T) {
 			"/upload",
 			"/temp",
 			nil,
+			nil, // no prefetch store
 		)
 		assert.Contains(t, source.Description(), "unsplash")
 	})
@@ -93,6 +95,7 @@ func TestRemoteSource_ListImages(t *testing.T) {
 			"light",
 			uploadDir,
 			filepath.Join(tmpDir, "temp"),
+			nil,
 			nil,
 		)
 		images, err := source.ListImages(context.Background())
@@ -114,6 +117,7 @@ func TestRemoteSource_ListImages(t *testing.T) {
 			"dark",
 			uploadDir,
 			filepath.Join(tmpDir, "temp"),
+			nil,
 			nil,
 		)
 		images, err := source.ListImages(context.Background())
@@ -142,6 +146,7 @@ func TestRemoteSource_ListImages(t *testing.T) {
 			upperDir,
 			filepath.Join(tmpDir, "temp"),
 			nil,
+			nil,
 		)
 		images, err := source.ListImages(context.Background())
 		require.NoError(t, err)
@@ -158,6 +163,7 @@ func TestRemoteSource_ListImages(t *testing.T) {
 			"light",
 			uploadDir,
 			filepath.Join(tmpDir, "temp"),
+			nil,
 			nil,
 		)
 
@@ -187,6 +193,7 @@ func TestRemoteSource_Save(t *testing.T) {
 		"light",
 		uploadDir,
 		tempDir,
+		nil,
 		nil,
 	)
 
@@ -222,6 +229,7 @@ func TestRemoteSource_CleanTemp(t *testing.T) {
 		filepath.Join(tmpDir, "upload"),
 		tempDir,
 		nil,
+		nil,
 	)
 
 	err := source.CleanTemp()
@@ -243,6 +251,7 @@ func TestRemoteSource_CleanTemp_NoDir(t *testing.T) {
 			"/upload",
 			"",
 			nil,
+			nil,
 		)
 		err := source.CleanTemp()
 		assert.NoError(t, err)
@@ -256,6 +265,7 @@ func TestRemoteSource_CleanTemp_NoDir(t *testing.T) {
 			"light",
 			"/upload",
 			"/nonexistent/temp",
+			nil,
 			nil,
 		)
 		err := source.CleanTemp()
@@ -389,4 +399,236 @@ func TestCopyFile_SourceNotExists(t *testing.T) {
 
 	err := copyFile("/nonexistent/file", filepath.Join(tmpDir, "dest.txt"))
 	require.Error(t, err)
+}
+
+// mockPrefetchStore is a test implementation of PrefetchStore.
+type mockPrefetchStore struct {
+	prefetches map[string]struct {
+		path  string
+		query string
+	}
+	saveCount int
+}
+
+func newMockPrefetchStore() *mockPrefetchStore {
+	return &mockPrefetchStore{
+		prefetches: make(map[string]struct {
+			path  string
+			query string
+		}),
+	}
+}
+
+func (m *mockPrefetchStore) GetPrefetch(sourceID string) (path, query string, ok bool) {
+	if entry, exists := m.prefetches[sourceID]; exists {
+		return entry.path, entry.query, true
+	}
+	return "", "", false
+}
+
+func (m *mockPrefetchStore) SetPrefetch(sourceID, path, query string) {
+	m.prefetches[sourceID] = struct {
+		path  string
+		query string
+	}{path: path, query: query}
+}
+
+func (m *mockPrefetchStore) ClearPrefetch(sourceID string) {
+	delete(m.prefetches, sourceID)
+}
+
+func (m *mockPrefetchStore) Save() error {
+	m.saveCount++
+	return nil
+}
+
+func TestRemoteSource_FetchRandom_PrefetchQueryMatching(t *testing.T) {
+	tmpDir := t.TempDir()
+	tempDir := filepath.Join(tmpDir, "temp")
+	uploadDir := filepath.Join(tmpDir, "upload")
+
+	// Create a prefetched file
+	prefetchDir := filepath.Join(tmpDir, "prefetch")
+	require.NoError(t, os.MkdirAll(prefetchDir, 0755))
+	prefetchedFile := filepath.Join(prefetchDir, "prefetched.jpg")
+	require.NoError(t, os.WriteFile(prefetchedFile, []byte("prefetched image"), 0644))
+
+	t.Run("uses prefetch when query matches", func(t *testing.T) {
+		mock := &mockProvider{
+			name: "mock",
+			searchResults: []provider.ImageMeta{
+				{ID: "img1", DownloadURL: "http://example.com/img1.jpg"},
+			},
+		}
+
+		prefetchStore := newMockPrefetchStore()
+		prefetchStore.SetPrefetch("test-remote", prefetchedFile, "nature, landscape")
+
+		source := &RemoteSource{
+			id:            "test-remote",
+			provider:      mock,
+			queries:       []string{"nature", "landscape"}, // matches prefetch query
+			uploadDir:     uploadDir,
+			tempDir:       tempDir,
+			theme:         "dark",
+			rng:           rand.New(rand.NewSource(42)),
+			prefetchStore: prefetchStore,
+		}
+
+		img, err := source.FetchRandom(context.Background(), "")
+		require.NoError(t, err)
+		require.NotNil(t, img)
+
+		// Should use prefetched image
+		assert.Equal(t, prefetchedFile, img.Path)
+		assert.Equal(t, "nature, landscape", img.Query)
+
+		// Prefetch should be cleared
+		_, _, ok := prefetchStore.GetPrefetch("test-remote")
+		assert.False(t, ok)
+
+		// Provider should NOT have been called (used prefetch)
+		assert.Empty(t, mock.searchQueries)
+
+		// Wait for background prefetch to finish
+		source.WaitPrefetch()
+	})
+
+	t.Run("ignores prefetch when query override differs", func(t *testing.T) {
+		mock := &mockProvider{
+			name: "mock",
+			searchResults: []provider.ImageMeta{
+				{ID: "img1", DownloadURL: "http://example.com/img1.jpg"},
+			},
+		}
+
+		// Recreate prefetched file (may have been used by previous test)
+		require.NoError(t, os.WriteFile(prefetchedFile, []byte("prefetched image"), 0644))
+
+		prefetchStore := newMockPrefetchStore()
+		prefetchStore.SetPrefetch("test-remote", prefetchedFile, "nature, landscape")
+
+		source := &RemoteSource{
+			id:            "test-remote",
+			provider:      mock,
+			queries:       []string{"nature", "landscape"},
+			uploadDir:     uploadDir,
+			tempDir:       tempDir,
+			theme:         "dark",
+			rng:           rand.New(rand.NewSource(42)),
+			prefetchStore: prefetchStore,
+		}
+
+		// Override query is different from prefetch query
+		img, err := source.FetchRandom(context.Background(), "mountains")
+		require.NoError(t, err)
+		require.NotNil(t, img)
+
+		// Should NOT use prefetched image (query doesn't match)
+		assert.NotEqual(t, prefetchedFile, img.Path)
+		assert.Equal(t, "mountains", img.Query)
+
+		// Stale prefetch should be cleared
+		_, _, ok := prefetchStore.GetPrefetch("test-remote")
+		assert.False(t, ok)
+
+		// Provider SHOULD have been called (new query)
+		require.NotEmpty(t, mock.searchQueries)
+		assert.Equal(t, []string{"mountains"}, mock.searchQueries[0])
+
+		// Wait for background prefetch to finish
+		source.WaitPrefetch()
+	})
+
+	t.Run("ignores prefetch when configured queries differ from prefetch", func(t *testing.T) {
+		mock := &mockProvider{
+			name: "mock",
+			searchResults: []provider.ImageMeta{
+				{ID: "img1", DownloadURL: "http://example.com/img1.jpg"},
+			},
+		}
+
+		// Recreate prefetched file
+		require.NoError(t, os.WriteFile(prefetchedFile, []byte("prefetched image"), 0644))
+
+		prefetchStore := newMockPrefetchStore()
+		// Prefetch was done with "old query"
+		prefetchStore.SetPrefetch("test-remote", prefetchedFile, "old query")
+
+		source := &RemoteSource{
+			id:            "test-remote",
+			provider:      mock,
+			queries:       []string{"new", "queries"}, // different from prefetch
+			uploadDir:     uploadDir,
+			tempDir:       tempDir,
+			theme:         "dark",
+			rng:           rand.New(rand.NewSource(42)),
+			prefetchStore: prefetchStore,
+		}
+
+		img, err := source.FetchRandom(context.Background(), "")
+		require.NoError(t, err)
+		require.NotNil(t, img)
+
+		// Should NOT use prefetched image
+		assert.NotEqual(t, prefetchedFile, img.Path)
+		assert.Equal(t, "new, queries", img.Query)
+
+		// Stale prefetch should be cleared
+		_, _, ok := prefetchStore.GetPrefetch("test-remote")
+		assert.False(t, ok)
+
+		// Provider SHOULD have been called
+		require.NotEmpty(t, mock.searchQueries)
+		assert.Equal(t, []string{"new", "queries"}, mock.searchQueries[0])
+
+		// Wait for background prefetch to finish
+		source.WaitPrefetch()
+	})
+
+	t.Run("uses prefetch when query override matches prefetch query", func(t *testing.T) {
+		mock := &mockProvider{
+			name: "mock",
+			searchResults: []provider.ImageMeta{
+				{ID: "img1", DownloadURL: "http://example.com/img1.jpg"},
+			},
+		}
+
+		// Recreate prefetched file
+		require.NoError(t, os.WriteFile(prefetchedFile, []byte("prefetched image"), 0644))
+
+		prefetchStore := newMockPrefetchStore()
+		// Prefetch was done with override query "mountains"
+		prefetchStore.SetPrefetch("test-remote", prefetchedFile, "mountains")
+
+		source := &RemoteSource{
+			id:            "test-remote",
+			provider:      mock,
+			queries:       []string{"nature", "landscape"}, // different, but override matches
+			uploadDir:     uploadDir,
+			tempDir:       tempDir,
+			theme:         "dark",
+			rng:           rand.New(rand.NewSource(42)),
+			prefetchStore: prefetchStore,
+		}
+
+		// Query override matches prefetch
+		img, err := source.FetchRandom(context.Background(), "mountains")
+		require.NoError(t, err)
+		require.NotNil(t, img)
+
+		// Should use prefetched image
+		assert.Equal(t, prefetchedFile, img.Path)
+		assert.Equal(t, "mountains", img.Query)
+
+		// Prefetch should be cleared
+		_, _, ok := prefetchStore.GetPrefetch("test-remote")
+		assert.False(t, ok)
+
+		// Provider should NOT have been called
+		assert.Empty(t, mock.searchQueries)
+
+		// Wait for background prefetch to finish
+		source.WaitPrefetch()
+	})
 }

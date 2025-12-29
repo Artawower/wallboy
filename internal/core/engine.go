@@ -93,7 +93,7 @@ func (e *Engine) initManager() {
 	queries := e.config.GetQueries(themeMode)
 	for name, providerCfg := range e.config.GetRemoteProviders(themeMode) {
 		id := fmt.Sprintf("%s-%s", theme, name)
-		source := datasource.NewRemoteSource(id, name, providerCfg.Auth, string(theme), uploadDir, tempDir, queries)
+		source := datasource.NewRemoteSource(id, name, providerCfg.Auth, string(theme), uploadDir, tempDir, queries, e.state)
 		e.manager.AddRemoteSource(source)
 	}
 }
@@ -143,42 +143,19 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 	var img *datasource.Image
 	var isTemp bool
 	var err error
-	var usedPrefetch bool
 
-	// Build cache key for prefetch lookup
-	cacheKey := e.buildCacheKey(themeName)
-
-	// Check if we should use remote (for prefetch logic)
-	willUseRemote := e.willUseRemote(themeName)
-
-	// Try to use prefetched wallpaper (only for remote sources)
-	if willUseRemote {
-		if prefetched := e.state.GetPrefetched(cacheKey); prefetched != nil {
-			img = &datasource.Image{
-				Path:     prefetched.Path,
-				SourceID: prefetched.SourceID,
-				Theme:    themeName,
-				IsLocal:  false,
-			}
-			isTemp = true
-			usedPrefetch = true
-			e.state.ClearPrefetched()
-		}
+	// Pick image based on overrides or random selection
+	// Prefetching is now handled inside RemoteSource.FetchRandom()
+	if e.providerOverride != "" {
+		img, isTemp, err = e.pickFromProvider(ctx, themeName, e.providerOverride)
+	} else if e.queryOverride != "" {
+		img, isTemp, err = e.pickFromRemote(ctx, themeName)
+	} else {
+		img, isTemp, err = e.pickNext(ctx, themeName)
 	}
 
-	// If no prefetch available, fetch normally
-	if img == nil {
-		if e.providerOverride != "" {
-			img, isTemp, err = e.pickFromProvider(ctx, themeName, e.providerOverride)
-		} else if e.queryOverride != "" {
-			img, isTemp, err = e.pickFromRemote(ctx, themeName)
-		} else {
-			img, isTemp, err = e.pickNext(ctx, themeName)
-		}
-
-		if err != nil {
-			return nil, err
-		}
+	if err != nil {
+		return nil, err
 	}
 
 	if e.dryRun {
@@ -188,6 +165,7 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 			SourceID: img.SourceID,
 			IsTemp:   isTemp,
 			SetAt:    time.Now(),
+			Query:    img.Query,
 		}, nil
 	}
 
@@ -196,13 +174,7 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 		return nil, fmt.Errorf("failed to set wallpaper: %w", err)
 	}
 
-	e.state.SetCurrent(img.Path, img.SourceID, img.Theme, isTemp)
-
-	// Prefetch next wallpaper for remote sources
-	if willUseRemote || usedPrefetch {
-		e.prefetchNext(ctx, themeName, cacheKey)
-	}
-
+	e.state.SetCurrent(img.Path, img.SourceID, img.Theme, img.Query, isTemp)
 	_ = e.state.Save()
 
 	return &WallpaperResult{
@@ -211,58 +183,8 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 		SourceID: img.SourceID,
 		IsTemp:   isTemp,
 		SetAt:    e.state.Current.SetAt,
+		Query:    img.Query,
 	}, nil
-}
-
-// buildCacheKey creates a cache key for prefetch lookup.
-// Format: "theme:provider:query"
-func (e *Engine) buildCacheKey(theme string) string {
-	provider := e.providerOverride
-	query := e.queryOverride
-	return fmt.Sprintf("%s:%s:%s", theme, provider, query)
-}
-
-// willUseRemote determines if the next fetch will DEFINITELY use remote sources.
-// Returns true only when we're certain remote will be used (for prefetch logic).
-func (e *Engine) willUseRemote(theme string) bool {
-	// Explicit provider override (not local)
-	if e.providerOverride != "" {
-		return e.providerOverride != "local"
-	}
-
-	// Query override forces remote
-	if e.queryOverride != "" {
-		return true
-	}
-
-	// If we have both local and remote, pickNext() uses random 50/50
-	// so we can't guarantee remote will be used - don't prefetch
-	hasLocal := e.manager.HasLocalSources(theme)
-	hasRemote := e.manager.HasRemoteSources(theme)
-
-	// Only prefetch when remote is the ONLY option
-	return hasRemote && !hasLocal
-}
-
-// prefetchNext fetches the next wallpaper and stores it for later use.
-func (e *Engine) prefetchNext(ctx context.Context, theme, cacheKey string) {
-	var img *datasource.Image
-	var err error
-
-	if e.providerOverride != "" {
-		img, _, err = e.pickFromProvider(ctx, theme, e.providerOverride)
-	} else if e.queryOverride != "" {
-		img, err = e.manager.FetchRandomRemote(ctx, theme, e.queryOverride)
-	} else {
-		img, err = e.manager.FetchRandomRemote(ctx, theme, "")
-	}
-
-	if err != nil {
-		// Prefetch failed - not critical, just skip
-		return
-	}
-
-	e.state.SetPrefetched(img.Path, img.SourceID, cacheKey)
 }
 
 func (e *Engine) pickNext(ctx context.Context, theme string) (*datasource.Image, bool, error) {
@@ -336,7 +258,8 @@ func (e *Engine) pickFromProvider(ctx context.Context, theme, providerName strin
 		auth = providerCfg.Auth
 	}
 
-	// Create temporary source for this request
+	// Create temporary source for this request and add to manager
+	// so WaitPrefetch will wait for its background prefetch
 	source := datasource.NewRemoteSource(
 		fmt.Sprintf("%s-%s", theme, providerName),
 		providerName,
@@ -345,7 +268,9 @@ func (e *Engine) pickFromProvider(ctx context.Context, theme, providerName strin
 		uploadDir,
 		tempDir,
 		e.config.GetQueries(themeMode),
+		e.state,
 	)
+	e.manager.AddRemoteSource(source)
 
 	img, err = source.FetchRandom(ctx, e.queryOverride)
 	if err != nil {
@@ -454,6 +379,7 @@ func (e *Engine) Info() (*WallpaperInfo, error) {
 		IsTemp:   e.state.IsTempWallpaper(),
 		SetAt:    e.state.Current.SetAt,
 		Exists:   exists,
+		Query:    e.state.Current.Query,
 	}, nil
 }
 
@@ -632,4 +558,10 @@ func (e *Engine) Platform() platform.Platform {
 
 func (e *Engine) Config() *config.Config {
 	return e.config
+}
+
+// WaitPrefetch waits for all background prefetch operations to complete.
+// Should be called before program exit to ensure prefetch state is saved.
+func (e *Engine) WaitPrefetch() {
+	e.manager.WaitPrefetch()
 }

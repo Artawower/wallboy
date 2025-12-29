@@ -293,10 +293,13 @@ func (p *Progress) Done() {
 }
 
 // WallpaperInfo prints formatted wallpaper information.
-func (o *Output) WallpaperInfo(theme, source, path string, setAt time.Time) {
+func (o *Output) WallpaperInfo(theme, source, path, query string, setAt time.Time) {
 	o.Success("Wallpaper set")
 	o.Field("Theme", theme)
 	o.Field("Source", source)
+	if query != "" {
+		o.Field("Query", query)
+	}
 	o.Field("File", path)
 	if !setAt.IsZero() {
 		o.Field("Set at", setAt.Format("2006-01-02 15:04:05"))

@@ -241,9 +241,9 @@ func TestManager_GetRemoteSourceByProvider(t *testing.T) {
 	m := NewManager("/upload", "/temp")
 
 	// Add remote sources
-	m.AddRemoteSource(NewRemoteSource("dark-bing", "bing", "", "dark", "/upload", "/temp", nil))
-	m.AddRemoteSource(NewRemoteSource("dark-wallhaven", "wallhaven", "key", "dark", "/upload", "/temp", nil))
-	m.AddRemoteSource(NewRemoteSource("light-unsplash", "unsplash", "key", "light", "/upload", "/temp", nil))
+	m.AddRemoteSource(NewRemoteSource("dark-bing", "bing", "", "dark", "/upload", "/temp", nil, nil))
+	m.AddRemoteSource(NewRemoteSource("dark-wallhaven", "wallhaven", "key", "dark", "/upload", "/temp", nil, nil))
+	m.AddRemoteSource(NewRemoteSource("light-unsplash", "unsplash", "key", "light", "/upload", "/temp", nil, nil))
 
 	t.Run("finds bing provider for dark theme", func(t *testing.T) {
 		source, err := m.GetRemoteSourceByProvider("dark", "bing")

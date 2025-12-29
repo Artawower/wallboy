@@ -218,7 +218,7 @@ Use 'wallboy save' to keep the image permanently.`,
 				return nil
 			}
 
-			out.WallpaperInfo(result.Theme, result.SourceID, shortenPath(result.Path), result.SetAt)
+			out.WallpaperInfo(result.Theme, result.SourceID, shortenPath(result.Path), result.Query, result.SetAt)
 
 			if result.IsTemp {
 				out.Print("")
@@ -230,6 +230,9 @@ Use 'wallboy save' to keep the image permanently.`,
 					out.Warning("Failed to open in Finder: %v", err)
 				}
 			}
+
+			// Wait for background prefetch to complete before exiting
+			engine.WaitPrefetch()
 
 			return nil
 		},
@@ -370,6 +373,9 @@ func newInfoCmd() *cobra.Command {
 			out.Field("Path", info.Path)
 			out.Field("Theme", info.Theme)
 			out.Field("Source", info.SourceID)
+			if info.Query != "" {
+				out.Field("Query", info.Query)
+			}
 			out.Field("Set at", info.SetAt.Format("2006-01-02 15:04:05"))
 			if info.IsTemp {
 				out.FieldColored("Status", "temporary (use 'save' to keep)", ui.Yellow)
@@ -468,12 +474,15 @@ and automatically sets the next random wallpaper.`,
 			}
 
 			out.Success("Deleted previous wallpaper")
-			out.WallpaperInfo(result.Theme, result.SourceID, shortenPath(result.Path), result.SetAt)
+			out.WallpaperInfo(result.Theme, result.SourceID, shortenPath(result.Path), result.Query, result.SetAt)
 
 			if result.IsTemp {
 				out.Print("")
 				out.Info("Use 'wallboy save' to keep this wallpaper")
 			}
+
+			// Wait for background prefetch to complete before exiting
+			engine.WaitPrefetch()
 
 			return nil
 		},
