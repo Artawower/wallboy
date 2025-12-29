@@ -25,6 +25,7 @@ type ProviderType string
 const (
 	ProviderUnsplash  ProviderType = "unsplash"
 	ProviderWallhaven ProviderType = "wallhaven"
+	ProviderWallhalla ProviderType = "wallhalla"
 	ProviderBing      ProviderType = "bing"
 	ProviderLocal     ProviderType = "local"
 )
@@ -172,8 +173,8 @@ func (c *Config) Validate() error {
 		if !isValidProvider(name) {
 			return fmt.Errorf("unknown provider: %s", name)
 		}
-		// Bing doesn't require auth
-		if name != "bing" && p.Auth == "" {
+		// Bing and Wallhalla don't require auth
+		if name != "bing" && name != "wallhalla" && p.Auth == "" {
 			return fmt.Errorf("provider %s: auth is required", name)
 		}
 	}
@@ -241,7 +242,7 @@ func (c *Config) validateThemeProviders(themeName string, theme *ThemeConfig) er
 
 func isValidProvider(name string) bool {
 	switch ProviderType(name) {
-	case ProviderUnsplash, ProviderWallhaven, ProviderBing, ProviderLocal:
+	case ProviderUnsplash, ProviderWallhaven, ProviderWallhalla, ProviderBing, ProviderLocal:
 		return true
 	}
 	return false

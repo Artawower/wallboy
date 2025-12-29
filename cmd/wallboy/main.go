@@ -55,7 +55,7 @@ and provides additional features like color analysis.`,
 	// Persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/wallboy/config.toml)")
 	rootCmd.PersistentFlags().StringVar(&themeFlag, "theme", "", "theme to use (auto|light|dark)")
-	rootCmd.PersistentFlags().StringVar(&providerFlag, "provider", "", "use specific provider (bing, wallhaven, unsplash, local)")
+	rootCmd.PersistentFlags().StringVar(&providerFlag, "provider", "", "use specific provider (bing, wallhaven, wallhalla, unsplash, local)")
 	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "show what would be done without doing it")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "suppress non-error output")
