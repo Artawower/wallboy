@@ -520,16 +520,24 @@ func (p *WallhallaProvider) Name() string {
 
 // Search fetches wallpapers from Wallhalla by scraping HTML.
 // If queries are provided, it searches; otherwise fetches random.
+// Falls back to random if search returns no results.
 func (p *WallhallaProvider) Search(ctx context.Context, queries []string) ([]ImageMeta, error) {
-	var searchURL string
-	if len(queries) == 0 || queries[0] == "" {
-		searchURL = p.baseURL + "/random"
-	} else {
-		// URL encode the query
-		searchURL = fmt.Sprintf("%s/search?q=%s", p.baseURL, url.QueryEscape(queries[0]))
+	// Try search first if query provided
+	if len(queries) > 0 && queries[0] != "" {
+		images, err := p.fetchPage(ctx, fmt.Sprintf("%s/search?q=%s", p.baseURL, url.QueryEscape(queries[0])))
+		if err == nil && len(images) > 0 {
+			return images, nil
+		}
+		// Fallback to random if search failed or returned nothing
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	// Fetch random
+	return p.fetchPage(ctx, p.baseURL+"/random")
+}
+
+// fetchPage fetches and parses a wallhalla page for wallpaper IDs.
+func (p *WallhallaProvider) fetchPage(ctx context.Context, pageURL string) ([]ImageMeta, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", pageURL, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -559,9 +560,32 @@ func TestWallhallaProvider_Search_NoResults(t *testing.T) {
 	p := NewWallhallaProvider()
 	p.baseURL = server.URL
 
+	// When random page has no results, should error
 	_, err := p.Search(context.Background(), nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no wallpapers found")
+}
+
+func TestWallhallaProvider_Search_FallbackToRandom(t *testing.T) {
+	// Search returns empty, random has results
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/search") {
+			// Empty search results
+			_, _ = w.Write([]byte(`<html><body>No results</body></html>`))
+		} else {
+			// Random page has wallpapers
+			_, _ = w.Write([]byte(`<html><body><a href="/wallpaper/99">Random</a></body></html>`))
+		}
+	}))
+	defer server.Close()
+
+	p := NewWallhallaProvider()
+	p.baseURL = server.URL
+
+	images, err := p.Search(context.Background(), []string{"nonexistent query"})
+	require.NoError(t, err)
+	require.Len(t, images, 1)
+	assert.Equal(t, "99", images[0].ID)
 }
 
 func TestWallhallaProvider_Download(t *testing.T) {
