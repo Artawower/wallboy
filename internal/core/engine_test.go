@@ -316,9 +316,10 @@ func TestEngine_willUseRemote(t *testing.T) {
 		assert.True(t, result)
 	})
 
-	t.Run("returns true when remote sources configured", func(t *testing.T) {
+	t.Run("returns true when only remote sources configured", func(t *testing.T) {
 		manager := datasource.NewManager(tmpDir, tmpDir)
 		manager.AddRemoteSource(datasource.NewRemoteSource("dark-bing", "bing", "", "dark", tmpDir, tmpDir, nil))
+		// No local sources
 
 		e := &Engine{
 			manager: manager,
@@ -326,6 +327,20 @@ func TestEngine_willUseRemote(t *testing.T) {
 
 		result := e.willUseRemote("dark")
 		assert.True(t, result)
+	})
+
+	t.Run("returns false when both local and remote sources", func(t *testing.T) {
+		manager := datasource.NewManager(tmpDir, tmpDir)
+		manager.AddRemoteSource(datasource.NewRemoteSource("dark-bing", "bing", "", "dark", tmpDir, tmpDir, nil))
+		manager.AddLocalSource(datasource.NewLocalSource("dark-local", tmpDir, "dark", false))
+
+		e := &Engine{
+			manager: manager,
+		}
+
+		// Can't guarantee remote will be used (50/50 random), so no prefetch
+		result := e.willUseRemote("dark")
+		assert.False(t, result)
 	})
 
 	t.Run("returns false when no remote sources", func(t *testing.T) {

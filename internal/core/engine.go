@@ -222,9 +222,10 @@ func (e *Engine) buildCacheKey(theme string) string {
 	return fmt.Sprintf("%s:%s:%s", theme, provider, query)
 }
 
-// willUseRemote determines if the next fetch will use remote sources.
+// willUseRemote determines if the next fetch will DEFINITELY use remote sources.
+// Returns true only when we're certain remote will be used (for prefetch logic).
 func (e *Engine) willUseRemote(theme string) bool {
-	// Explicit provider override
+	// Explicit provider override (not local)
 	if e.providerOverride != "" {
 		return e.providerOverride != "local"
 	}
@@ -234,8 +235,13 @@ func (e *Engine) willUseRemote(theme string) bool {
 		return true
 	}
 
-	// Check if we have remote sources configured
-	return e.manager.HasRemoteSources(theme)
+	// If we have both local and remote, pickNext() uses random 50/50
+	// so we can't guarantee remote will be used - don't prefetch
+	hasLocal := e.manager.HasLocalSources(theme)
+	hasRemote := e.manager.HasRemoteSources(theme)
+
+	// Only prefetch when remote is the ONLY option
+	return hasRemote && !hasLocal
 }
 
 // prefetchNext fetches the next wallpaper and stores it for later use.
