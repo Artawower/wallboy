@@ -6,34 +6,26 @@ import (
 	"sync"
 )
 
-// ErrUnsupported is returned when an operation is not supported on the current platform.
 var ErrUnsupported = errors.New("operation not supported on this platform")
 
-// platformBuilder is a function that creates a Platform instance.
 type platformBuilder func() Platform
 
-// Registry holds registered platform builders.
 var (
 	registry     = make(map[string]platformBuilder)
 	registryLock sync.RWMutex
 )
 
-// Register registers a platform builder for the given OS name.
-// This should be called from init() functions in platform-specific packages.
 func Register(osName string, builder platformBuilder) {
 	registryLock.Lock()
 	defer registryLock.Unlock()
 	registry[osName] = builder
 }
 
-// current holds the cached platform instance.
 var (
 	current     Platform
 	currentOnce sync.Once
 )
 
-// Current returns the platform implementation for the current OS.
-// The instance is cached and reused for subsequent calls.
 func Current() Platform {
 	currentOnce.Do(func() {
 		current = newPlatform()
@@ -41,7 +33,6 @@ func Current() Platform {
 	return current
 }
 
-// newPlatform creates a new platform instance for the current OS.
 func newPlatform() Platform {
 	registryLock.RLock()
 	defer registryLock.RUnlock()
@@ -50,11 +41,9 @@ func newPlatform() Platform {
 		return builder()
 	}
 
-	// Return an unsupported platform stub
 	return &unsupportedPlatform{name: runtime.GOOS}
 }
 
-// unsupportedPlatform is a minimal fallback for unregistered platforms.
 type unsupportedPlatform struct {
 	name string
 }
@@ -89,13 +78,11 @@ type unsupportedFileManager struct{}
 func (s *unsupportedFileManager) Reveal(path string) error { return ErrUnsupported }
 func (s *unsupportedFileManager) Open(path string) error   { return ErrUnsupported }
 
-// SetPlatform allows overriding the current platform (useful for testing).
 func SetPlatform(p Platform) {
-	currentOnce.Do(func() {}) // Ensure once is triggered
+	currentOnce.Do(func() {})
 	current = p
 }
 
-// ResetPlatform resets the cached platform (useful for testing).
 func ResetPlatform() {
 	currentOnce = sync.Once{}
 	current = nil

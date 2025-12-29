@@ -1,4 +1,3 @@
-// Package theme handles theme detection for wallboy.
 package theme
 
 import (
@@ -6,7 +5,6 @@ import (
 	"github.com/Artawower/wallboy/internal/platform"
 )
 
-// Theme represents the current theme.
 type Theme string
 
 const (
@@ -14,13 +12,11 @@ const (
 	Dark  Theme = "dark"
 )
 
-// Detector detects the current system theme.
 type Detector struct {
 	mode config.ThemeMode
 	svc  platform.ThemeService
 }
 
-// NewDetector creates a new theme detector.
 func NewDetector(mode config.ThemeMode) *Detector {
 	return &Detector{
 		mode: mode,
@@ -28,7 +24,6 @@ func NewDetector(mode config.ThemeMode) *Detector {
 	}
 }
 
-// Detect detects the current theme based on configuration and system settings.
 func (d *Detector) Detect() Theme {
 	switch d.mode {
 	case config.ThemeModeLight:
@@ -42,7 +37,6 @@ func (d *Detector) Detect() Theme {
 	}
 }
 
-// detectSystem detects the system theme using the platform service.
 func (d *Detector) detectSystem() Theme {
 	platformTheme := d.svc.Detect()
 	switch platformTheme {
@@ -53,7 +47,6 @@ func (d *Detector) detectSystem() Theme {
 	}
 }
 
-// ToConfigMode converts Theme to config.ThemeMode.
 func (t Theme) ToConfigMode() config.ThemeMode {
 	switch t {
 	case Light:
@@ -65,7 +58,6 @@ func (t Theme) ToConfigMode() config.ThemeMode {
 	}
 }
 
-// String returns the string representation of the theme.
 func (t Theme) String() string {
 	return string(t)
 }

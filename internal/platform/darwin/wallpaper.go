@@ -8,15 +8,12 @@ import (
 	"strings"
 )
 
-// WallpaperService implements platform.WallpaperService for macOS.
 type WallpaperService struct{}
 
-// NewWallpaperService creates a new macOS wallpaper service.
 func NewWallpaperService() *WallpaperService {
 	return &WallpaperService{}
 }
 
-// Set sets the desktop wallpaper using AppleScript.
 func (s *WallpaperService) Set(path string) error {
 	script := fmt.Sprintf(`tell application "System Events"
 		tell every desktop
@@ -31,7 +28,6 @@ func (s *WallpaperService) Set(path string) error {
 	return nil
 }
 
-// Get returns the current desktop wallpaper path.
 func (s *WallpaperService) Get() (string, error) {
 	script := `tell application "System Events" to get picture of first desktop`
 

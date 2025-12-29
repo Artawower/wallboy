@@ -42,7 +42,6 @@ func (p *WallhallaProvider) Search(ctx context.Context, queries []string) ([]Ima
 
 	images, err := p.fetchPage(ctx, fmt.Sprintf("%s/search?q=%s", p.baseURL, url.QueryEscape(queries[0])))
 	if err != nil || len(images) == 0 {
-		// Fallback to random if search returns no results
 		return p.fetchPage(ctx, p.baseURL+"/random")
 	}
 	return images, nil

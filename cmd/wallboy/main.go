@@ -1,4 +1,3 @@
-// Package main is the entry point for the wallboy CLI.
 package main
 
 import (
@@ -17,21 +16,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version info (set via ldflags)
 var (
 	version = "dev"
 	commit  = "none"
 	date    = "unknown"
 )
 
-// Agent constants
 const (
-	defaultInterval = 600 // 10 minutes
-	minInterval     = 60  // 1 minute minimum
+	defaultInterval = 600
+	minInterval     = 60
 )
 
 var (
-	// Global flags
 	cfgFile      string
 	themeFlag    string
 	providerFlag string
@@ -39,7 +35,6 @@ var (
 	verbose      bool
 	quiet        bool
 
-	// Global output
 	out *ui.Output
 )
 
@@ -52,7 +47,6 @@ It supports local and remote image sources, respects light/dark theme,
 and provides additional features like color analysis.`,
 	}
 
-	// Persistent flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default: ~/.config/wallboy/config.toml)")
 	rootCmd.PersistentFlags().StringVar(&themeFlag, "theme", "", "theme to use (auto|light|dark)")
 	rootCmd.PersistentFlags().StringVar(&providerFlag, "provider", "", "use specific provider (bing, wallhaven, wallhalla, unsplash, local)")
@@ -60,7 +54,6 @@ and provides additional features like color analysis.`,
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "suppress non-error output")
 
-	// Add commands
 	rootCmd.AddCommand(
 		newInitCmd(),
 		newNextCmd(),
@@ -77,7 +70,6 @@ and provides additional features like color analysis.`,
 		newAgentStatusCmd(),
 	)
 
-	// Handle signals
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -93,19 +85,16 @@ and provides additional features like color analysis.`,
 	}
 }
 
-// initOutput initializes the output.
 func initOutput() {
 	out = ui.DefaultOutput()
 	out.SetVerbose(verbose)
 	out.SetQuiet(quiet)
 }
 
-// newEngine creates a new engine with current flags.
 func newEngine() (*core.Engine, error) {
 	return newEngineWithQuery("")
 }
 
-// newEngineWithQuery creates a new engine with current flags and optional query override.
 func newEngineWithQuery(query string) (*core.Engine, error) {
 	var opts []core.Option
 	if themeFlag != "" {
@@ -124,7 +113,6 @@ func newEngineWithQuery(query string) (*core.Engine, error) {
 	return core.New(cfgFile, opts...)
 }
 
-// newInitCmd creates the init command.
 func newInitCmd() *cobra.Command {
 	var force bool
 
@@ -138,29 +126,24 @@ func newInitCmd() *cobra.Command {
 			configDir := config.DefaultConfigDir()
 			configPath := filepath.Join(configDir, "config.toml")
 
-			// Check if already exists
 			if _, err := os.Stat(configPath); err == nil && !force {
 				out.Warning("Configuration already exists at %s", configPath)
 				out.Info("Use --force to overwrite")
 				return nil
 			}
 
-			// Create default config
 			cfg := config.DefaultConfig()
 
-			// Create directories
 			if err := cfg.EnsureDirectories(); err != nil {
 				out.Error("Failed to create directories: %v", err)
 				return err
 			}
 
-			// Write config
 			if err := cfg.Save(configPath); err != nil {
 				out.Error("Failed to write config: %v", err)
 				return err
 			}
 
-			// Create empty state file
 			st := state.New(cfg.State.Path)
 			if err := st.Save(); err != nil {
 				out.Error("Failed to create state file: %v", err)
@@ -183,7 +166,6 @@ func newInitCmd() *cobra.Command {
 	return cmd
 }
 
-// newNextCmd creates the next command.
 func newNextCmd() *cobra.Command {
 	var openAfter bool
 	var queryFlag string
@@ -231,7 +213,6 @@ Use 'wallboy save' to keep the image permanently.`,
 				}
 			}
 
-			// Wait for background prefetch to complete before exiting
 			engine.WaitPrefetch()
 
 			return nil
@@ -244,7 +225,6 @@ Use 'wallboy save' to keep the image permanently.`,
 	return cmd
 }
 
-// newSaveCmd creates the save command.
 func newSaveCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "save",
@@ -288,7 +268,6 @@ func newSaveCmd() *cobra.Command {
 	}
 }
 
-// newShowCmd creates the show command.
 func newShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show",
@@ -316,7 +295,6 @@ func newShowCmd() *cobra.Command {
 	}
 }
 
-// newOpenCmd creates the open command.
 func newOpenCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "open",
@@ -345,7 +323,6 @@ func newOpenCmd() *cobra.Command {
 	}
 }
 
-// newInfoCmd creates the info command.
 func newInfoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "info",
@@ -393,7 +370,6 @@ func newInfoCmd() *cobra.Command {
 	}
 }
 
-// newColorsCmd creates the colors command.
 func newColorsCmd() *cobra.Command {
 	var topN int
 
@@ -439,7 +415,6 @@ func newColorsCmd() *cobra.Command {
 	return cmd
 }
 
-// newDeleteCmd creates the delete command.
 func newDeleteCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete",
@@ -481,7 +456,6 @@ and automatically sets the next random wallpaper.`,
 				out.Info("Use 'wallboy save' to keep this wallpaper")
 			}
 
-			// Wait for background prefetch to complete before exiting
 			engine.WaitPrefetch()
 
 			return nil
@@ -489,7 +463,6 @@ and automatically sets the next random wallpaper.`,
 	}
 }
 
-// newSourcesCmd creates the sources command.
 func newSourcesCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "sources",
@@ -531,7 +504,6 @@ func newSourcesCmd() *cobra.Command {
 	}
 }
 
-// newVersionCmd creates the version command.
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
@@ -549,7 +521,6 @@ func newVersionCmd() *cobra.Command {
 	}
 }
 
-// newAgentInstallCmd creates the agent-install command.
 func newAgentInstallCmd() *cobra.Command {
 	var interval int
 
@@ -560,7 +531,6 @@ func newAgentInstallCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			initOutput()
 
-			// Validate interval
 			if interval < minInterval {
 				out.Error("Minimum interval is %d seconds", minInterval)
 				return fmt.Errorf("interval too small")
@@ -590,7 +560,6 @@ func newAgentInstallCmd() *cobra.Command {
 	return cmd
 }
 
-// newAgentUninstallCmd creates the agent-uninstall command.
 func newAgentUninstallCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "agent-uninstall",
@@ -626,7 +595,6 @@ func newAgentUninstallCmd() *cobra.Command {
 	}
 }
 
-// newAgentStatusCmd creates the agent-status command.
 func newAgentStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "agent-status",
@@ -672,7 +640,6 @@ func newAgentStatusCmd() *cobra.Command {
 	}
 }
 
-// shortenPath shortens a path for display.
 func shortenPath(path string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -684,7 +651,6 @@ func shortenPath(path string) string {
 	return path
 }
 
-// formatDuration formats duration to human readable (e.g., "1.5 minutes")
 func formatDuration(d time.Duration) string {
 	minutes := d.Minutes()
 	if minutes == 1 {

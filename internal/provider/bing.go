@@ -28,7 +28,6 @@ func (p *BingProvider) Name() string {
 func (p *BingProvider) Search(ctx context.Context, queries []string) ([]ImageMeta, error) {
 	var images []ImageMeta
 
-	// Bing keeps last 8 days of wallpapers
 	indices := []string{"0", "1", "2", "3", "4", "5", "6", "7", "random"}
 
 	for _, idx := range indices {
