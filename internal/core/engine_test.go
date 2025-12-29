@@ -236,6 +236,111 @@ func TestEngine_OpenImage(t *testing.T) {
 	})
 }
 
+func TestEngine_buildCacheKey(t *testing.T) {
+	tests := []struct {
+		name             string
+		theme            string
+		providerOverride string
+		queryOverride    string
+		expected         string
+	}{
+		{
+			name:     "default - no overrides",
+			theme:    "dark",
+			expected: "dark::",
+		},
+		{
+			name:             "with provider override",
+			theme:            "dark",
+			providerOverride: "bing",
+			expected:         "dark:bing:",
+		},
+		{
+			name:          "with query override",
+			theme:         "light",
+			queryOverride: "nature",
+			expected:      "light::nature",
+		},
+		{
+			name:             "with both overrides",
+			theme:            "dark",
+			providerOverride: "wallhaven",
+			queryOverride:    "cyberpunk",
+			expected:         "dark:wallhaven:cyberpunk",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := &Engine{
+				providerOverride: tt.providerOverride,
+				queryOverride:    tt.queryOverride,
+			}
+
+			result := e.buildCacheKey(tt.theme)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestEngine_willUseRemote(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Run("returns false for local provider override", func(t *testing.T) {
+		e := &Engine{
+			providerOverride: "local",
+			manager:          datasource.NewManager(tmpDir, tmpDir),
+		}
+
+		result := e.willUseRemote("dark")
+		assert.False(t, result)
+	})
+
+	t.Run("returns true for remote provider override", func(t *testing.T) {
+		e := &Engine{
+			providerOverride: "bing",
+			manager:          datasource.NewManager(tmpDir, tmpDir),
+		}
+
+		result := e.willUseRemote("dark")
+		assert.True(t, result)
+	})
+
+	t.Run("returns true for query override", func(t *testing.T) {
+		e := &Engine{
+			queryOverride: "nature",
+			manager:       datasource.NewManager(tmpDir, tmpDir),
+		}
+
+		result := e.willUseRemote("dark")
+		assert.True(t, result)
+	})
+
+	t.Run("returns true when remote sources configured", func(t *testing.T) {
+		manager := datasource.NewManager(tmpDir, tmpDir)
+		manager.AddRemoteSource(datasource.NewRemoteSource("dark-bing", "bing", "", "dark", tmpDir, tmpDir, nil))
+
+		e := &Engine{
+			manager: manager,
+		}
+
+		result := e.willUseRemote("dark")
+		assert.True(t, result)
+	})
+
+	t.Run("returns false when no remote sources", func(t *testing.T) {
+		manager := datasource.NewManager(tmpDir, tmpDir)
+		// No remote sources added
+
+		e := &Engine{
+			manager: manager,
+		}
+
+		result := e.willUseRemote("dark")
+		assert.False(t, result)
+	})
+}
+
 func TestEngine_pickFromProvider(t *testing.T) {
 	tmpDir := t.TempDir()
 	statePath := filepath.Join(tmpDir, "state.json")

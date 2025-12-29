@@ -18,11 +18,20 @@ type CurrentWallpaper struct {
 	IsTemp   bool      `json:"is_temp,omitempty"` // true if image is in temp dir (not saved)
 }
 
+// PrefetchEntry represents a prefetched wallpaper ready to be used.
+type PrefetchEntry struct {
+	Path      string    `json:"path"`       // Path to prefetched image in temp dir
+	SourceID  string    `json:"source_id"`  // Source that provided this image
+	CacheKey  string    `json:"cache_key"`  // Key: "theme:provider:query"
+	FetchedAt time.Time `json:"fetched_at"` // When it was fetched
+}
+
 // State represents the persistent state.
 type State struct {
-	Theme   string           `json:"theme"`
-	Current CurrentWallpaper `json:"current"`
-	History []string         `json:"history"`
+	Theme      string           `json:"theme"`
+	Current    CurrentWallpaper `json:"current"`
+	History    []string         `json:"history"`
+	Prefetched *PrefetchEntry   `json:"prefetched,omitempty"` // Prefetched wallpaper for next call
 
 	// Runtime fields
 	path string
@@ -162,6 +171,43 @@ func (s *State) HasCurrent() bool {
 // Path returns the state file path.
 func (s *State) Path() string {
 	return s.path
+}
+
+// GetPrefetched returns the prefetched entry if it matches the cache key.
+// Returns nil if no prefetch exists or key doesn't match.
+func (s *State) GetPrefetched(cacheKey string) *PrefetchEntry {
+	if s.Prefetched == nil {
+		return nil
+	}
+	if s.Prefetched.CacheKey != cacheKey {
+		return nil
+	}
+	// Check if file still exists
+	if _, err := os.Stat(s.Prefetched.Path); os.IsNotExist(err) {
+		s.Prefetched = nil
+		return nil
+	}
+	return s.Prefetched
+}
+
+// SetPrefetched sets the prefetched wallpaper entry.
+func (s *State) SetPrefetched(path, sourceID, cacheKey string) {
+	s.Prefetched = &PrefetchEntry{
+		Path:      path,
+		SourceID:  sourceID,
+		CacheKey:  cacheKey,
+		FetchedAt: time.Now(),
+	}
+}
+
+// ClearPrefetched clears the prefetched entry.
+func (s *State) ClearPrefetched() {
+	s.Prefetched = nil
+}
+
+// HasPrefetched returns true if there's a valid prefetched wallpaper.
+func (s *State) HasPrefetched(cacheKey string) bool {
+	return s.GetPrefetched(cacheKey) != nil
 }
 
 // expandPath expands ~ to home directory.

@@ -335,3 +335,105 @@ func TestExpandPath(t *testing.T) {
 		})
 	}
 }
+
+func TestState_Prefetch(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	t.Run("GetPrefetched returns nil when no prefetch", func(t *testing.T) {
+		s := New(filepath.Join(tmpDir, "state.json"))
+
+		result := s.GetPrefetched("dark:bing:")
+		assert.Nil(t, result)
+	})
+
+	t.Run("SetPrefetched and GetPrefetched with matching key", func(t *testing.T) {
+		s := New(filepath.Join(tmpDir, "state.json"))
+
+		// Create a real temp file
+		prefetchPath := filepath.Join(tmpDir, "prefetched.jpg")
+		require.NoError(t, os.WriteFile(prefetchPath, []byte("image"), 0644))
+
+		s.SetPrefetched(prefetchPath, "dark-bing", "dark:bing:")
+
+		result := s.GetPrefetched("dark:bing:")
+		require.NotNil(t, result)
+		assert.Equal(t, prefetchPath, result.Path)
+		assert.Equal(t, "dark-bing", result.SourceID)
+		assert.Equal(t, "dark:bing:", result.CacheKey)
+		assert.False(t, result.FetchedAt.IsZero())
+	})
+
+	t.Run("GetPrefetched returns nil for non-matching key", func(t *testing.T) {
+		s := New(filepath.Join(tmpDir, "state.json"))
+
+		prefetchPath := filepath.Join(tmpDir, "prefetched2.jpg")
+		require.NoError(t, os.WriteFile(prefetchPath, []byte("image"), 0644))
+
+		s.SetPrefetched(prefetchPath, "dark-bing", "dark:bing:")
+
+		// Different key should not match
+		result := s.GetPrefetched("light:bing:")
+		assert.Nil(t, result)
+
+		result = s.GetPrefetched("dark:wallhaven:")
+		assert.Nil(t, result)
+	})
+
+	t.Run("GetPrefetched returns nil if file no longer exists", func(t *testing.T) {
+		s := New(filepath.Join(tmpDir, "state.json"))
+
+		// Set prefetch with non-existent file
+		s.SetPrefetched("/nonexistent/path.jpg", "dark-bing", "dark:bing:")
+
+		result := s.GetPrefetched("dark:bing:")
+		assert.Nil(t, result)
+		// Prefetch should be cleared
+		assert.Nil(t, s.Prefetched)
+	})
+
+	t.Run("ClearPrefetched clears the entry", func(t *testing.T) {
+		s := New(filepath.Join(tmpDir, "state.json"))
+
+		prefetchPath := filepath.Join(tmpDir, "prefetched3.jpg")
+		require.NoError(t, os.WriteFile(prefetchPath, []byte("image"), 0644))
+
+		s.SetPrefetched(prefetchPath, "dark-bing", "dark:bing:")
+		require.NotNil(t, s.Prefetched)
+
+		s.ClearPrefetched()
+		assert.Nil(t, s.Prefetched)
+	})
+
+	t.Run("HasPrefetched returns correct value", func(t *testing.T) {
+		s := New(filepath.Join(tmpDir, "state.json"))
+
+		assert.False(t, s.HasPrefetched("dark:bing:"))
+
+		prefetchPath := filepath.Join(tmpDir, "prefetched4.jpg")
+		require.NoError(t, os.WriteFile(prefetchPath, []byte("image"), 0644))
+
+		s.SetPrefetched(prefetchPath, "dark-bing", "dark:bing:")
+
+		assert.True(t, s.HasPrefetched("dark:bing:"))
+		assert.False(t, s.HasPrefetched("light:bing:"))
+	})
+
+	t.Run("Prefetch persists through save/load", func(t *testing.T) {
+		statePath := filepath.Join(tmpDir, "persist_state.json")
+		prefetchPath := filepath.Join(tmpDir, "prefetched5.jpg")
+		require.NoError(t, os.WriteFile(prefetchPath, []byte("image"), 0644))
+
+		s := New(statePath)
+		s.SetPrefetched(prefetchPath, "dark-bing", "dark:bing:")
+		require.NoError(t, s.Save())
+
+		// Load and verify
+		loaded, err := Load(statePath)
+		require.NoError(t, err)
+
+		result := loaded.GetPrefetched("dark:bing:")
+		require.NotNil(t, result)
+		assert.Equal(t, prefetchPath, result.Path)
+		assert.Equal(t, "dark-bing", result.SourceID)
+	})
+}
