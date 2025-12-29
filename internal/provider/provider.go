@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -491,6 +492,130 @@ func (p *BingProvider) Download(ctx context.Context, meta ImageMeta, dest string
 	return p.downloadFile(ctx, meta.DownloadURL, dest)
 }
 
+// WallhallaProvider implements the Wallhalla wallpaper site (HTML scraping).
+type WallhallaProvider struct {
+	*BaseProvider
+	idRegex *regexp.Regexp
+}
+
+// NewWallhallaProvider creates a new Wallhalla provider.
+func NewWallhallaProvider() *WallhallaProvider {
+	p := &WallhallaProvider{
+		BaseProvider: NewBaseProvider(""),
+		idRegex:      regexp.MustCompile(`/wallpaper/(\d+)`),
+	}
+	p.baseURL = "https://wallhalla.com"
+	return p
+}
+
+// Name returns the provider name.
+func (p *WallhallaProvider) Name() string {
+	return "wallhalla"
+}
+
+// Search fetches wallpapers from Wallhalla by scraping HTML.
+// If queries are provided, it searches; otherwise fetches random.
+func (p *WallhallaProvider) Search(ctx context.Context, queries []string) ([]ImageMeta, error) {
+	var searchURL string
+	if len(queries) == 0 || queries[0] == "" {
+		searchURL = p.baseURL + "/random"
+	} else {
+		// URL encode the query
+		searchURL = fmt.Sprintf("%s/search?q=%s", p.baseURL, url.QueryEscape(queries[0]))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("wallhalla returned status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract wallpaper IDs from HTML
+	matches := p.idRegex.FindAllStringSubmatch(string(body), -1)
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("no wallpapers found on wallhalla")
+	}
+
+	// Deduplicate IDs
+	seen := make(map[string]bool)
+	var images []ImageMeta
+	for _, match := range matches {
+		id := match[1]
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+
+		images = append(images, ImageMeta{
+			ID:          id,
+			URL:         fmt.Sprintf("%s/wallpaper/%s", p.baseURL, id),
+			DownloadURL: fmt.Sprintf("%s/wallpaper/%s/variant/original?dl=true", p.baseURL, id),
+			Source:      "wallhalla",
+		})
+
+		if len(images) >= DefaultSearchLimit {
+			break
+		}
+	}
+
+	return images, nil
+}
+
+// Download downloads an image from Wallhalla.
+func (p *WallhallaProvider) Download(ctx context.Context, meta ImageMeta, dest string) (string, error) {
+	if info, err := os.Stat(dest); err == nil && info.IsDir() {
+		dest = filepath.Join(dest, fmt.Sprintf("wallhalla_%s.jpg", meta.ID))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", meta.DownloadURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to download from wallhalla: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("wallhalla download failed with status: %d", resp.StatusCode)
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		return "", fmt.Errorf("failed to create directory: %w", err)
+	}
+
+	out, err := os.Create(dest)
+	if err != nil {
+		return "", fmt.Errorf("failed to create file: %w", err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		return "", fmt.Errorf("failed to write file: %w", err)
+	}
+
+	return dest, nil
+}
+
 // GenericProvider implements a generic URL-based provider.
 type GenericProvider struct {
 	*BaseProvider
@@ -545,6 +670,8 @@ func NewProvider(providerType string, auth string, urls []string) Provider {
 		return NewWallhavenProvider(auth)
 	case "bing":
 		return NewBingProvider()
+	case "wallhalla":
+		return NewWallhallaProvider()
 	case "generic":
 		return NewGenericProvider(auth, urls)
 	default:

@@ -40,6 +40,11 @@ func TestNewProvider(t *testing.T) {
 			wantName:     "bing",
 		},
 		{
+			name:         "wallhalla",
+			providerType: "wallhalla",
+			wantName:     "wallhalla",
+		},
+		{
 			name:         "generic",
 			providerType: "generic",
 			urls:         []string{"http://example.com/img.jpg"},
@@ -477,6 +482,118 @@ func TestBingProvider_Download(t *testing.T) {
 		require.NoError(t, err)
 		// Should default to .jpg when extension is too long (query params)
 		assert.Contains(t, path, ".jpg")
+	})
+}
+
+// --- Wallhalla Provider Tests ---
+
+func TestNewWallhallaProvider(t *testing.T) {
+	p := NewWallhallaProvider()
+
+	assert.Equal(t, "wallhalla", p.Name())
+	assert.NotNil(t, p.idRegex)
+}
+
+func TestWallhallaProvider_Search(t *testing.T) {
+	// Mock HTML response with wallpaper links
+	mockHTML := `
+	<html>
+	<body>
+		<a href="/wallpaper/15">Image 1</a>
+		<a href="/wallpaper/33">Image 2</a>
+		<a href="/wallpaper/71">Image 3</a>
+		<a href="/wallpaper/15">Duplicate</a>
+	</body>
+	</html>
+	`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(mockHTML))
+	}))
+	defer server.Close()
+
+	p := NewWallhallaProvider()
+	p.baseURL = server.URL
+
+	t.Run("parses random page", func(t *testing.T) {
+		images, err := p.Search(context.Background(), nil)
+		require.NoError(t, err)
+		require.Len(t, images, 3) // 3 unique IDs (15 is duplicated)
+
+		assert.Equal(t, "15", images[0].ID)
+		assert.Equal(t, server.URL+"/wallpaper/15", images[0].URL)
+		assert.Equal(t, server.URL+"/wallpaper/15/variant/original?dl=true", images[0].DownloadURL)
+		assert.Equal(t, "wallhalla", images[0].Source)
+
+		assert.Equal(t, "33", images[1].ID)
+		assert.Equal(t, "71", images[2].ID)
+	})
+
+	t.Run("with query uses search endpoint", func(t *testing.T) {
+		var requestedURL string
+		searchServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requestedURL = r.URL.String()
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(mockHTML))
+		}))
+		defer searchServer.Close()
+
+		sp := NewWallhallaProvider()
+		sp.baseURL = searchServer.URL
+
+		_, err := sp.Search(context.Background(), []string{"minimalist"})
+		require.NoError(t, err)
+		assert.Contains(t, requestedURL, "/search?q=minimalist")
+	})
+}
+
+func TestWallhallaProvider_Search_NoResults(t *testing.T) {
+	mockHTML := `<html><body>No wallpapers here</body></html>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(mockHTML))
+	}))
+	defer server.Close()
+
+	p := NewWallhallaProvider()
+	p.baseURL = server.URL
+
+	_, err := p.Search(context.Background(), nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no wallpapers found")
+}
+
+func TestWallhallaProvider_Download(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("wallhalla image data"))
+	}))
+	defer server.Close()
+
+	p := NewWallhallaProvider()
+
+	meta := ImageMeta{
+		ID:          "42",
+		DownloadURL: server.URL + "/wallpaper/42/variant/original",
+	}
+
+	t.Run("downloads to directory", func(t *testing.T) {
+		path, err := p.Download(context.Background(), meta, tmpDir)
+		require.NoError(t, err)
+		assert.Contains(t, path, "wallhalla_42.jpg")
+
+		data, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, "wallhalla image data", string(data))
+	})
+
+	t.Run("downloads to specific file", func(t *testing.T) {
+		destPath := filepath.Join(tmpDir, "custom.png")
+		path, err := p.Download(context.Background(), meta, destPath)
+		require.NoError(t, err)
+		assert.Equal(t, destPath, path)
 	})
 }
 
