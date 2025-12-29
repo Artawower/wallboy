@@ -165,17 +165,14 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid theme mode: %s (must be auto, light, or dark)", c.Theme.Mode)
 	}
 
-	// Validate providers
-	for name, p := range c.Providers {
+	// Validate providers - only check if provider name is valid
+	// Auth is validated at runtime when provider is actually used
+	for name := range c.Providers {
 		if name == "local" {
 			continue
 		}
 		if !isValidProvider(name) {
 			return fmt.Errorf("unknown provider: %s", name)
-		}
-		// Bing and Wallhalla don't require auth
-		if name != "bing" && name != "wallhalla" && p.Auth == "" {
-			return fmt.Errorf("provider %s: auth is required", name)
 		}
 	}
 

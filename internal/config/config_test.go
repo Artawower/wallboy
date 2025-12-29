@@ -160,18 +160,6 @@ func TestConfig_Validate(t *testing.T) {
 		assert.Nil(t, cfg)
 	})
 
-	t.Run("provider without auth", func(t *testing.T) {
-		cfg := &Config{
-			Theme: ThemeSettings{Mode: ThemeModeLight},
-			Providers: map[string]ProviderConfig{
-				"unsplash": {Auth: ""}, // Missing auth
-			},
-		}
-		err := cfg.Validate()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "auth is required")
-	})
-
 	t.Run("theme references unknown provider", func(t *testing.T) {
 		cfg := &Config{
 			Theme: ThemeSettings{Mode: ThemeModeLight},

@@ -501,8 +501,13 @@ type WallhallaProvider struct {
 // NewWallhallaProvider creates a new Wallhalla provider.
 func NewWallhallaProvider() *WallhallaProvider {
 	p := &WallhallaProvider{
-		BaseProvider: NewBaseProvider(""),
-		idRegex:      regexp.MustCompile(`/wallpaper/(\d+)`),
+		BaseProvider: &BaseProvider{
+			client: &http.Client{
+				Timeout: 60 * time.Second, // Longer timeout for scraping
+			},
+			auth: "",
+		},
+		idRegex: regexp.MustCompile(`/wallpaper/(\d+)`),
 	}
 	p.baseURL = "https://wallhalla.com"
 	return p
@@ -528,7 +533,11 @@ func (p *WallhallaProvider) Search(ctx context.Context, queries []string) ([]Ima
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+	// Set headers to look like a real browser
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	req.Header.Set("Connection", "keep-alive")
 
 	resp, err := p.client.Do(req)
 	if err != nil {
