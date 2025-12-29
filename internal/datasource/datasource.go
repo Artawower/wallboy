@@ -1,4 +1,3 @@
-// Package datasource provides interfaces and implementations for image sources.
 package datasource
 
 import (
@@ -11,7 +10,6 @@ import (
 	"time"
 )
 
-// SupportedExtensions are the image file extensions we support.
 var SupportedExtensions = map[string]bool{
 	".jpg":  true,
 	".jpeg": true,
@@ -19,31 +17,22 @@ var SupportedExtensions = map[string]bool{
 	".webp": true,
 }
 
-// Image represents an image from a datasource.
 type Image struct {
 	Path     string
 	SourceID string
 	Theme    string
 	IsLocal  bool
 	URL      string
-	Query    string // Query used to fetch this image (for remote sources)
+	Query    string
 }
 
-// PrefetchStore provides storage for prefetched wallpapers per source.
-// This interface allows state management to be decoupled from the datasource package.
 type PrefetchStore interface {
-	// GetPrefetch returns the prefetched image path and query for a source, if available.
-	// Returns empty strings and false if no valid prefetch exists.
 	GetPrefetch(sourceID string) (path, query string, ok bool)
-	// SetPrefetch stores a prefetched image path and query for a source.
 	SetPrefetch(sourceID, path, query string)
-	// ClearPrefetch removes the prefetched entry for a source.
 	ClearPrefetch(sourceID string)
-	// Save persists the prefetch state.
 	Save() error
 }
 
-// SourceType represents the type of source.
 type SourceType string
 
 const (
@@ -51,7 +40,6 @@ const (
 	SourceTypeRemote SourceType = "remote"
 )
 
-// LocalSource represents a local directory source.
 type LocalSource struct {
 	id        string
 	dir       string
@@ -59,7 +47,6 @@ type LocalSource struct {
 	theme     string
 }
 
-// NewLocalSource creates a new local source.
 func NewLocalSource(id, dir, theme string, recursive bool) *LocalSource {
 	return &LocalSource{
 		id:        id,
@@ -74,7 +61,6 @@ func (s *LocalSource) Type() SourceType    { return SourceTypeLocal }
 func (s *LocalSource) Theme() string       { return s.theme }
 func (s *LocalSource) Description() string { return s.dir }
 
-// ListImages returns all images from the local directory.
 func (s *LocalSource) ListImages(ctx context.Context) ([]Image, error) {
 	var images []Image
 
@@ -122,7 +108,6 @@ func (s *LocalSource) ListImages(ctx context.Context) ([]Image, error) {
 	return images, nil
 }
 
-// Manager manages image sources and selection.
 type Manager struct {
 	localSources  []*LocalSource
 	remoteSources []*RemoteSource
@@ -131,7 +116,6 @@ type Manager struct {
 	rng           *rand.Rand
 }
 
-// NewManager creates a new datasource manager.
 func NewManager(uploadDir, tempDir string) *Manager {
 	return &Manager{
 		uploadDir: uploadDir,
@@ -143,17 +127,14 @@ func NewManager(uploadDir, tempDir string) *Manager {
 func (m *Manager) TempDir() string   { return m.tempDir }
 func (m *Manager) UploadDir() string { return m.uploadDir }
 
-// AddLocalSource adds a local source.
 func (m *Manager) AddLocalSource(source *LocalSource) {
 	m.localSources = append(m.localSources, source)
 }
 
-// AddRemoteSource adds a remote source.
 func (m *Manager) AddRemoteSource(source *RemoteSource) {
 	m.remoteSources = append(m.remoteSources, source)
 }
 
-// GetLocalSources returns all local sources for a theme.
 func (m *Manager) GetLocalSources(theme string) []*LocalSource {
 	var result []*LocalSource
 	for _, s := range m.localSources {
@@ -164,7 +145,6 @@ func (m *Manager) GetLocalSources(theme string) []*LocalSource {
 	return result
 }
 
-// GetRemoteSources returns all remote sources for a theme.
 func (m *Manager) GetRemoteSources(theme string) []*RemoteSource {
 	var result []*RemoteSource
 	for _, s := range m.remoteSources {
@@ -175,7 +155,6 @@ func (m *Manager) GetRemoteSources(theme string) []*RemoteSource {
 	return result
 }
 
-// GetLocalSourceByID returns a local source by ID.
 func (m *Manager) GetLocalSourceByID(id string) (*LocalSource, error) {
 	for _, s := range m.localSources {
 		if s.id == id {
@@ -185,7 +164,6 @@ func (m *Manager) GetLocalSourceByID(id string) (*LocalSource, error) {
 	return nil, fmt.Errorf("local source not found: %s", id)
 }
 
-// GetRemoteSourceByID returns a remote source by ID.
 func (m *Manager) GetRemoteSourceByID(id string) (*RemoteSource, error) {
 	for _, s := range m.remoteSources {
 		if s.id == id {
@@ -195,17 +173,14 @@ func (m *Manager) GetRemoteSourceByID(id string) (*RemoteSource, error) {
 	return nil, fmt.Errorf("remote source not found: %s", id)
 }
 
-// HasLocalSources returns true if there are local sources for the theme.
 func (m *Manager) HasLocalSources(theme string) bool {
 	return len(m.GetLocalSources(theme)) > 0
 }
 
-// HasRemoteSources returns true if there are remote sources for the theme.
 func (m *Manager) HasRemoteSources(theme string) bool {
 	return len(m.GetRemoteSources(theme)) > 0
 }
 
-// PickRandomLocal picks a random image from local sources.
 func (m *Manager) PickRandomLocal(ctx context.Context, theme string, excludeHistory []string) (*Image, error) {
 	sources := m.GetLocalSources(theme)
 	if len(sources) == 0 {
@@ -262,7 +237,6 @@ func (m *Manager) PickRandomLocal(ctx context.Context, theme string, excludeHist
 	return &selected.images[imgIdx], nil
 }
 
-// PickRandomFromLocalSource picks a random image from a specific local source.
 func (m *Manager) PickRandomFromLocalSource(ctx context.Context, sourceID string, excludeHistory []string) (*Image, error) {
 	source, err := m.GetLocalSourceByID(sourceID)
 	if err != nil {
@@ -298,7 +272,6 @@ func (m *Manager) PickRandomFromLocalSource(ctx context.Context, sourceID string
 	return &filtered[idx], nil
 }
 
-// GetRemoteSourceByProvider returns a remote source by provider name for a theme.
 func (m *Manager) GetRemoteSourceByProvider(theme, providerName string) (*RemoteSource, error) {
 	for _, s := range m.remoteSources {
 		if s.theme == theme && s.ProviderName() == providerName {
@@ -308,7 +281,6 @@ func (m *Manager) GetRemoteSourceByProvider(theme, providerName string) (*Remote
 	return nil, fmt.Errorf("remote source not found for provider: %s", providerName)
 }
 
-// FetchFromProvider fetches a random image from a specific provider.
 func (m *Manager) FetchFromProvider(ctx context.Context, theme, providerName, queryOverride string) (*Image, error) {
 	source, err := m.GetRemoteSourceByProvider(theme, providerName)
 	if err != nil {
@@ -317,17 +289,14 @@ func (m *Manager) FetchFromProvider(ctx context.Context, theme, providerName, qu
 	return source.FetchRandom(ctx, queryOverride)
 }
 
-// FetchRandomRemote fetches a random image from remote sources using weighted selection.
 func (m *Manager) FetchRandomRemote(ctx context.Context, theme, queryOverride string) (*Image, error) {
 	sources := m.GetRemoteSources(theme)
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("no remote sources for theme: %s", theme)
 	}
 
-	// Order sources by weighted random selection
 	ordered := m.weightedShuffle(sources)
 
-	// Try each source until success
 	var lastErr error
 	for _, source := range ordered {
 		img, err := source.FetchRandom(ctx, queryOverride)
@@ -340,14 +309,11 @@ func (m *Manager) FetchRandomRemote(ctx context.Context, theme, queryOverride st
 	return nil, fmt.Errorf("failed to fetch from remote: %w", lastErr)
 }
 
-// weightedShuffle returns sources ordered by weighted random selection.
-// Sources with higher weight have proportionally higher chance of being selected first.
 func (m *Manager) weightedShuffle(sources []*RemoteSource) []*RemoteSource {
 	if len(sources) <= 1 {
 		return sources
 	}
 
-	// Create a copy with remaining weights
 	type weightedSource struct {
 		source *RemoteSource
 		weight int
@@ -361,16 +327,13 @@ func (m *Manager) weightedShuffle(sources []*RemoteSource) []*RemoteSource {
 	result := make([]*RemoteSource, 0, len(sources))
 
 	for len(remaining) > 0 {
-		// Calculate total weight
 		totalWeight := 0
 		for _, ws := range remaining {
 			totalWeight += ws.weight
 		}
 
-		// Pick random value in [0, totalWeight)
 		pick := m.rng.Intn(totalWeight)
 
-		// Find which source this corresponds to
 		cumulative := 0
 		selectedIdx := 0
 		for i, ws := range remaining {
@@ -381,24 +344,19 @@ func (m *Manager) weightedShuffle(sources []*RemoteSource) []*RemoteSource {
 			}
 		}
 
-		// Add selected source to result
 		result = append(result, remaining[selectedIdx].source)
-
-		// Remove from remaining
 		remaining = append(remaining[:selectedIdx], remaining[selectedIdx+1:]...)
 	}
 
 	return result
 }
 
-// CleanupTemp removes temporary files.
 func (m *Manager) CleanupTemp() {
 	for _, s := range m.remoteSources {
 		_ = s.CleanTemp()
 	}
 }
 
-// WaitPrefetch waits for all background prefetch operations to complete.
 func (m *Manager) WaitPrefetch() {
 	for _, s := range m.remoteSources {
 		s.WaitPrefetch()

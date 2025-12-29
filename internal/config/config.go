@@ -1,4 +1,3 @@
-// Package config handles configuration loading, parsing and validation for wallboy.
 package config
 
 import (
@@ -10,7 +9,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// ThemeMode represents the theme selection mode.
 type ThemeMode string
 
 const (
@@ -19,7 +17,6 @@ const (
 	ThemeModeDark  ThemeMode = "dark"
 )
 
-// ProviderType represents the type of remote provider.
 type ProviderType string
 
 const (
@@ -30,32 +27,27 @@ const (
 	ProviderLocal     ProviderType = "local"
 )
 
-// ProviderConfig represents a provider configuration.
 type ProviderConfig struct {
 	Auth      string `toml:"auth"`
-	Recursive bool   `toml:"recursive"` // For local provider
-	Weight    int    `toml:"weight"`    // Selection weight (default 1)
+	Recursive bool   `toml:"recursive"`
+	Weight    int    `toml:"weight"`
 }
 
-// ThemeConfig represents theme-specific configuration.
 type ThemeConfig struct {
-	Dirs      []string `toml:"dirs"`       // Local directories (sources)
-	UploadDir string   `toml:"upload-dir"` // Where to save remote images
-	Queries   []string `toml:"queries"`    // Search queries for remote providers
-	Providers []string `toml:"providers"`  // Optional: limit to specific providers
+	Dirs      []string `toml:"dirs"`
+	UploadDir string   `toml:"upload-dir"`
+	Queries   []string `toml:"queries"`
+	Providers []string `toml:"providers"`
 }
 
-// StateConfig represents state file configuration.
 type StateConfig struct {
 	Path string `toml:"path"`
 }
 
-// ThemeSettings represents theme mode settings.
 type ThemeSettings struct {
 	Mode ThemeMode `toml:"mode"`
 }
 
-// Config represents the complete configuration.
 type Config struct {
 	State     StateConfig               `toml:"state"`
 	Theme     ThemeSettings             `toml:"theme"`
@@ -63,11 +55,9 @@ type Config struct {
 	Light     ThemeConfig               `toml:"light"`
 	Dark      ThemeConfig               `toml:"dark"`
 
-	// Runtime fields (not from TOML)
 	configPath string
 }
 
-// DefaultConfigDir returns the default configuration directory.
 func DefaultConfigDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -76,7 +66,6 @@ func DefaultConfigDir() string {
 	return filepath.Join(home, ".config", "wallboy")
 }
 
-// DefaultConfig returns a new Config with default values.
 func DefaultConfig() *Config {
 	configDir := DefaultConfigDir()
 	home, _ := os.UserHomeDir()
@@ -103,7 +92,6 @@ func DefaultConfig() *Config {
 	}
 }
 
-// Load loads configuration from the specified path or default location.
 func Load(path string) (*Config, error) {
 	if path == "" {
 		path = filepath.Join(DefaultConfigDir(), "config.toml")
@@ -131,11 +119,9 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// postProcess expands paths and environment variables.
 func (c *Config) postProcess() {
 	c.State.Path = expandPath(c.State.Path)
 
-	// Process providers
 	for name, p := range c.Providers {
 		p.Auth = expandEnv(p.Auth)
 		if p.Weight == 0 {
@@ -144,7 +130,6 @@ func (c *Config) postProcess() {
 		c.Providers[name] = p
 	}
 
-	// Process themes
 	c.processTheme(&c.Light)
 	c.processTheme(&c.Dark)
 }
@@ -156,17 +141,13 @@ func (c *Config) processTheme(theme *ThemeConfig) {
 	}
 }
 
-// Validate validates the configuration.
 func (c *Config) Validate() error {
 	switch c.Theme.Mode {
 	case ThemeModeAuto, ThemeModeLight, ThemeModeDark:
-		// Valid
 	default:
 		return fmt.Errorf("invalid theme mode: %s (must be auto, light, or dark)", c.Theme.Mode)
 	}
 
-	// Validate providers - only check if provider name is valid
-	// Auth is validated at runtime when provider is actually used
 	for name := range c.Providers {
 		if name == "local" {
 			continue
@@ -176,7 +157,6 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// Validate theme provider references
 	if err := c.validateThemeProviders("light", &c.Light); err != nil {
 		return err
 	}
@@ -194,12 +174,10 @@ func (c *Config) validateThemeProviders(themeName string, theme *ThemeConfig) er
 		}
 	}
 
-	// Check if theme has remote providers configured (excluding bing for query requirements)
 	hasRemote := false
-	hasQueryBasedRemote := false // Remote providers that need queries (not bing)
+	hasQueryBasedRemote := false
 
 	if len(theme.Providers) == 0 {
-		// No restriction - check if any remote provider exists
 		for name := range c.Providers {
 			if name != "local" {
 				hasRemote = true
@@ -209,7 +187,6 @@ func (c *Config) validateThemeProviders(themeName string, theme *ThemeConfig) er
 			}
 		}
 	} else {
-		// Check restricted providers
 		for _, p := range theme.Providers {
 			if p != "local" {
 				hasRemote = true
@@ -220,14 +197,12 @@ func (c *Config) validateThemeProviders(themeName string, theme *ThemeConfig) er
 		}
 	}
 
-	// Validate upload-dir when remote providers are used
 	if hasRemote {
 		if theme.UploadDir == "" {
 			return fmt.Errorf("%s: upload-dir is required when using remote providers", themeName)
 		}
 	}
 
-	// Validate queries when query-based remote providers are used (not bing)
 	if hasQueryBasedRemote {
 		if len(theme.Queries) == 0 {
 			return fmt.Errorf("%s: queries are required when using remote providers", themeName)
@@ -245,7 +220,6 @@ func isValidProvider(name string) bool {
 	return false
 }
 
-// GetThemeConfig returns the configuration for the specified theme.
 func (c *Config) GetThemeConfig(theme ThemeMode) *ThemeConfig {
 	switch theme {
 	case ThemeModeLight:
@@ -257,29 +231,24 @@ func (c *Config) GetThemeConfig(theme ThemeMode) *ThemeConfig {
 	}
 }
 
-// GetUploadDir returns the upload directory for the specified theme.
 func (c *Config) GetUploadDir(theme ThemeMode) string {
 	return c.GetThemeConfig(theme).UploadDir
 }
 
-// GetLocalDirs returns local directories for the specified theme.
 func (c *Config) GetLocalDirs(theme ThemeMode) []string {
 	return c.GetThemeConfig(theme).Dirs
 }
 
-// GetQueries returns search queries for the specified theme.
 func (c *Config) GetQueries(theme ThemeMode) []string {
 	return c.GetThemeConfig(theme).Queries
 }
 
-// GetRemoteProviders returns remote providers available for the specified theme.
 func (c *Config) GetRemoteProviders(theme ThemeMode) map[string]ProviderConfig {
 	themeConfig := c.GetThemeConfig(theme)
 	result := make(map[string]ProviderConfig)
 
 	allowedProviders := themeConfig.Providers
 	if len(allowedProviders) == 0 {
-		// All providers except local
 		for name, p := range c.Providers {
 			if name != "local" {
 				result[name] = p
@@ -299,7 +268,6 @@ func (c *Config) GetRemoteProviders(theme ThemeMode) map[string]ProviderConfig {
 	return result
 }
 
-// GetLocalConfig returns local provider configuration.
 func (c *Config) GetLocalConfig() ProviderConfig {
 	if p, ok := c.Providers["local"]; ok {
 		return p
@@ -307,17 +275,14 @@ func (c *Config) GetLocalConfig() ProviderConfig {
 	return ProviderConfig{Recursive: true}
 }
 
-// IsLocalEnabled returns true if local directories are configured for the theme.
 func (c *Config) IsLocalEnabled(theme ThemeMode) bool {
 	return len(c.GetLocalDirs(theme)) > 0
 }
 
-// ConfigPath returns the path to the config file.
 func (c *Config) ConfigPath() string {
 	return c.configPath
 }
 
-// Save writes the configuration to a file.
 func (c *Config) Save(path string) error {
 	if path == "" {
 		path = c.configPath
@@ -347,7 +312,6 @@ func (c *Config) Save(path string) error {
 	return nil
 }
 
-// EnsureDirectories creates all necessary directories.
 func (c *Config) EnsureDirectories() error {
 	dirs := []string{
 		filepath.Dir(c.State.Path),
@@ -368,12 +332,10 @@ func (c *Config) EnsureDirectories() error {
 	return nil
 }
 
-// GetTempDir returns the system temp directory for wallboy.
 func GetTempDir() string {
 	return filepath.Join(os.TempDir(), "wallboy")
 }
 
-// expandPath expands ~ to home directory.
 func expandPath(path string) string {
 	if path == "" {
 		return ""
@@ -388,7 +350,6 @@ func expandPath(path string) string {
 	return path
 }
 
-// expandEnv expands environment variables in a string.
 func expandEnv(s string) string {
 	if s == "" {
 		return ""

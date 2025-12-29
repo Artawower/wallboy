@@ -235,7 +235,6 @@ func (e *Engine) pickFromProvider(ctx context.Context, theme, providerName strin
 		return img, false, nil
 	}
 
-	// Try to find existing source for this provider
 	img, err := e.manager.FetchFromProvider(ctx, theme, providerName, e.queryOverride)
 	if err == nil {
 		return img, true, nil
@@ -541,8 +540,6 @@ func (e *Engine) Config() *config.Config {
 	return e.config
 }
 
-// WaitPrefetch waits for all background prefetch operations to complete.
-// Should be called before program exit to ensure prefetch state is saved.
 func (e *Engine) WaitPrefetch() {
 	e.manager.WaitPrefetch()
 }

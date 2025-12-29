@@ -13,7 +13,6 @@ import (
 	"github.com/Artawower/wallboy/internal/provider"
 )
 
-// RemoteSource represents a remote image provider.
 type RemoteSource struct {
 	id            string
 	provider      provider.Provider
@@ -27,9 +26,6 @@ type RemoteSource struct {
 	prefetchWg    sync.WaitGroup
 }
 
-// NewRemoteSource creates a new remote source.
-// prefetchStore can be nil to disable prefetching.
-// weight determines selection probability (default 1).
 func NewRemoteSource(id, providerName, auth, theme, uploadDir, tempDir string, queries []string, weight int, prefetchStore PrefetchStore) *RemoteSource {
 	p := provider.NewProvider(providerName, auth, nil)
 
@@ -57,7 +53,6 @@ func (s *RemoteSource) UploadDir() string { return s.uploadDir }
 func (s *RemoteSource) TempDir() string   { return s.tempDir }
 func (s *RemoteSource) Weight() int       { return s.weight }
 
-// queryInList checks if a query is in the configured queries list.
 func (s *RemoteSource) queryInList(query string) bool {
 	for _, q := range s.queries {
 		if q == query {
@@ -74,7 +69,6 @@ func (s *RemoteSource) Description() string {
 	return "remote"
 }
 
-// ProviderName returns the name of the provider (e.g., "bing", "wallhaven").
 func (s *RemoteSource) ProviderName() string {
 	if s.provider != nil {
 		return s.provider.Name()
@@ -82,7 +76,6 @@ func (s *RemoteSource) ProviderName() string {
 	return ""
 }
 
-// ListImages returns all saved images from the upload directory.
 func (s *RemoteSource) ListImages(ctx context.Context) ([]Image, error) {
 	var images []Image
 
@@ -127,24 +120,17 @@ func (s *RemoteSource) ListImages(ctx context.Context) ([]Image, error) {
 	return images, nil
 }
 
-// FetchRandom fetches a random image from remote and downloads to temp directory.
-// If prefetching is enabled and a prefetched image exists with matching query,
-// it returns that and triggers a new prefetch for next time.
 func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*Image, error) {
 	if s.provider == nil {
 		return nil, fmt.Errorf("no provider configured")
 	}
 
-	// Check if we have a prefetched image ready with matching query
 	if s.prefetchStore != nil {
 		if prefetchPath, prefetchQuery, ok := s.prefetchStore.GetPrefetch(s.id); ok {
-			// Check if prefetch is valid for current request
 			prefetchValid := false
 			if queryOverride != "" {
-				// With override, prefetch must match exactly
 				prefetchValid = (prefetchQuery == queryOverride)
 			} else {
-				// Without override, prefetch is valid if its query is in our list
 				prefetchValid = s.queryInList(prefetchQuery)
 			}
 
@@ -152,7 +138,6 @@ func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*
 				s.prefetchStore.ClearPrefetch(s.id)
 				_ = s.prefetchStore.Save()
 
-				// Trigger prefetch for next time (in background)
 				s.prefetchWg.Add(1)
 				go func() {
 					defer s.prefetchWg.Done()
@@ -167,7 +152,6 @@ func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*
 					Query:    prefetchQuery,
 				}, nil
 			}
-			// Query doesn't match - clear stale prefetch
 			s.prefetchStore.ClearPrefetch(s.id)
 			_ = s.prefetchStore.Save()
 		}
@@ -178,7 +162,6 @@ func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*
 		return nil, err
 	}
 
-	// Trigger prefetch for next time (in background)
 	if s.prefetchStore != nil {
 		s.prefetchWg.Add(1)
 		go func() {
@@ -190,14 +173,11 @@ func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*
 	return img, nil
 }
 
-// doFetch performs the actual fetch and download of an image.
-// It picks one random query from the configured queries (or uses queryOverride).
 func (s *RemoteSource) doFetch(ctx context.Context, queryOverride string) (*Image, error) {
 	if err := os.MkdirAll(s.tempDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	// Pick one random query (no need to search all - we only need 1 image)
 	var query string
 	if queryOverride != "" {
 		query = queryOverride
@@ -240,12 +220,10 @@ func (s *RemoteSource) doFetch(ctx context.Context, queryOverride string) (*Imag
 	}, nil
 }
 
-// WaitPrefetch waits for any background prefetch to complete.
 func (s *RemoteSource) WaitPrefetch() {
 	s.prefetchWg.Wait()
 }
 
-// doPrefetch fetches an image and stores it for later use.
 func (s *RemoteSource) doPrefetch(ctx context.Context, queryOverride string) {
 	if s.prefetchStore == nil {
 		return
@@ -253,7 +231,6 @@ func (s *RemoteSource) doPrefetch(ctx context.Context, queryOverride string) {
 
 	img, err := s.doFetch(ctx, queryOverride)
 	if err != nil {
-		// Prefetch failed - not critical, just skip
 		return
 	}
 
@@ -261,7 +238,6 @@ func (s *RemoteSource) doPrefetch(ctx context.Context, queryOverride string) {
 	_ = s.prefetchStore.Save()
 }
 
-// Save moves an image from temp to upload directory.
 func (s *RemoteSource) Save(tempPath string) (string, error) {
 	if err := os.MkdirAll(s.uploadDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create upload directory: %w", err)
@@ -280,7 +256,6 @@ func (s *RemoteSource) Save(tempPath string) (string, error) {
 	return destPath, nil
 }
 
-// CleanTemp removes all files from temp directory.
 func (s *RemoteSource) CleanTemp() error {
 	if s.tempDir == "" {
 		return nil
