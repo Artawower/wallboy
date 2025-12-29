@@ -135,7 +135,6 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 	currentTheme := e.detectTheme()
 	themeName := string(currentTheme)
 
-	// Clean up previous temp wallpaper
 	if e.state.HasCurrent() && e.state.IsTempWallpaper() {
 		os.Remove(e.state.Current.Path)
 	}
@@ -144,8 +143,6 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 	var isTemp bool
 	var err error
 
-	// Pick image based on overrides or random selection
-	// Prefetching is now handled inside RemoteSource.FetchRandom()
 	if e.providerOverride != "" {
 		img, isTemp, err = e.pickFromProvider(ctx, themeName, e.providerOverride)
 	} else if e.queryOverride != "" {
@@ -169,7 +166,6 @@ func (e *Engine) Next(ctx context.Context) (*WallpaperResult, error) {
 		}, nil
 	}
 
-	// Set wallpaper
 	if err := e.platform.Wallpaper().Set(img.Path); err != nil {
 		return nil, fmt.Errorf("failed to set wallpaper: %w", err)
 	}
@@ -231,7 +227,6 @@ func (e *Engine) pickNext(ctx context.Context, theme string) (*datasource.Image,
 }
 
 func (e *Engine) pickFromProvider(ctx context.Context, theme, providerName string) (*datasource.Image, bool, error) {
-	// Handle "local" provider specially
 	if providerName == "local" {
 		img, err := e.manager.PickRandomLocal(ctx, theme, e.state.History)
 		if err != nil {
@@ -246,14 +241,10 @@ func (e *Engine) pickFromProvider(ctx context.Context, theme, providerName strin
 		return img, true, nil
 	}
 
-	// Provider not in manager - try to create it on-the-fly
-	// This allows --provider bing to work even if bing is not in config
 	themeMode := e.detectTheme().ToConfigMode()
 	uploadDir := e.config.GetUploadDir(themeMode)
 	tempDir := config.GetTempDir()
 
-	// Get auth from config if provider exists there, otherwise empty (works for bing)
-	// Get auth and weight from config if provider exists there
 	var auth string
 	weight := 1
 	if providerCfg, exists := e.config.Providers[providerName]; exists {
@@ -261,8 +252,6 @@ func (e *Engine) pickFromProvider(ctx context.Context, theme, providerName strin
 		weight = providerCfg.Weight
 	}
 
-	// Create temporary source for this request and add to manager
-	// so WaitPrefetch will wait for its background prefetch
 	source := datasource.NewRemoteSource(
 		fmt.Sprintf("%s-%s", theme, providerName),
 		providerName,
@@ -450,26 +439,11 @@ func (e *Engine) GetCurrentWallpaperPath() (string, error) {
 	return e.platform.Wallpaper().Get()
 }
 
-// getWallpaperPath returns the best known wallpaper path.
-// Prefers state path (if exists), falls back to system query.
-func (e *Engine) getWallpaperPath() string {
-	// First try state - it's more reliable
-	if e.state != nil && e.state.HasCurrent() {
-		return e.state.Current.Path
-	}
-	// Fall back to system
-	if e.platform == nil {
-		return ""
-	}
+func (e *Engine) OpenInFinder() error {
 	path, err := e.platform.Wallpaper().Get()
 	if err != nil {
-		return ""
+		return fmt.Errorf("failed to get current wallpaper: %w", err)
 	}
-	return path
-}
-
-func (e *Engine) OpenInFinder() error {
-	path := e.getWallpaperPath()
 	if path == "" {
 		return fmt.Errorf("no wallpaper path available")
 	}
@@ -480,7 +454,10 @@ func (e *Engine) OpenInFinder() error {
 }
 
 func (e *Engine) OpenImage() error {
-	path := e.getWallpaperPath()
+	path, err := e.platform.Wallpaper().Get()
+	if err != nil {
+		return fmt.Errorf("failed to get current wallpaper: %w", err)
+	}
 	if path == "" {
 		return fmt.Errorf("no wallpaper path available")
 	}

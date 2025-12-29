@@ -173,7 +173,6 @@ func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*
 		}
 	}
 
-	// No valid prefetch available, fetch normally
 	img, err := s.doFetch(ctx, queryOverride)
 	if err != nil {
 		return nil, err

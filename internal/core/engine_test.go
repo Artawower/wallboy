@@ -9,10 +9,41 @@ import (
 
 	"github.com/Artawower/wallboy/internal/config"
 	"github.com/Artawower/wallboy/internal/datasource"
+	"github.com/Artawower/wallboy/internal/platform"
 	"github.com/Artawower/wallboy/internal/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type mockPlatform struct {
+	wallpaperPath string
+	wallpaperErr  error
+	revealCalled  bool
+	openCalled    bool
+}
+
+func (m *mockPlatform) Name() string                               { return "mock" }
+func (m *mockPlatform) IsSupported() bool                          { return true }
+func (m *mockPlatform) Wallpaper() platform.WallpaperService       { return m }
+func (m *mockPlatform) Theme() platform.ThemeService               { return m }
+func (m *mockPlatform) Scheduler() platform.SchedulerService       { return m }
+func (m *mockPlatform) FileManager() platform.FileManagerService   { return m }
+func (m *mockPlatform) Set(path string) error                      { return nil }
+func (m *mockPlatform) Get() (string, error)                       { return m.wallpaperPath, m.wallpaperErr }
+func (m *mockPlatform) Detect() platform.Theme                     { return platform.ThemeLight }
+func (m *mockPlatform) Install(cfg platform.SchedulerConfig) error { return nil }
+func (m *mockPlatform) Uninstall(label string) error               { return nil }
+func (m *mockPlatform) Status(label string) (platform.SchedulerStatus, error) {
+	return platform.SchedulerStatus{}, nil
+}
+func (m *mockPlatform) Reveal(path string) error {
+	m.revealCalled = true
+	return nil
+}
+func (m *mockPlatform) Open(path string) error {
+	m.openCalled = true
+	return nil
+}
 
 func TestColor_Hex(t *testing.T) {
 	tests := []struct {
@@ -163,38 +194,12 @@ func TestWithQueryOverride(t *testing.T) {
 	}
 }
 
-func TestEngine_getWallpaperPath(t *testing.T) {
-	tmpDir := t.TempDir()
-	statePath := filepath.Join(tmpDir, "state.json")
-
-	t.Run("returns state path when available", func(t *testing.T) {
-		st := state.New(statePath)
-		st.SetCurrent("/path/to/wallpaper.jpg", "source-1", "dark", "", false)
-
-		e := &Engine{state: st}
-
-		path := e.getWallpaperPath()
-		assert.Equal(t, "/path/to/wallpaper.jpg", path)
-	})
-
-	t.Run("returns empty when no state and no platform", func(t *testing.T) {
-		st := state.New(statePath)
-		// No current set, no platform
-
-		e := &Engine{state: st}
-
-		path := e.getWallpaperPath()
-		assert.Empty(t, path)
-	})
-}
-
 func TestEngine_OpenInFinder(t *testing.T) {
 	tmpDir := t.TempDir()
-	statePath := filepath.Join(tmpDir, "state.json")
 
-	t.Run("error when no wallpaper path", func(t *testing.T) {
-		st := state.New(statePath)
-		e := &Engine{state: st}
+	t.Run("error when platform returns empty path", func(t *testing.T) {
+		mock := &mockPlatform{wallpaperPath: ""}
+		e := &Engine{platform: mock}
 
 		err := e.OpenInFinder()
 		require.Error(t, err)
@@ -202,23 +207,33 @@ func TestEngine_OpenInFinder(t *testing.T) {
 	})
 
 	t.Run("error when file does not exist", func(t *testing.T) {
-		st := state.New(statePath)
-		st.SetCurrent("/nonexistent/wallpaper.jpg", "source-1", "dark", "", false)
-		e := &Engine{state: st}
+		mock := &mockPlatform{wallpaperPath: "/nonexistent/wallpaper.jpg"}
+		e := &Engine{platform: mock}
 
 		err := e.OpenInFinder()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no longer exists")
+	})
+
+	t.Run("success when file exists", func(t *testing.T) {
+		testFile := filepath.Join(tmpDir, "test.jpg")
+		require.NoError(t, os.WriteFile(testFile, []byte("test"), 0644))
+
+		mock := &mockPlatform{wallpaperPath: testFile}
+		e := &Engine{platform: mock}
+
+		err := e.OpenInFinder()
+		require.NoError(t, err)
+		assert.True(t, mock.revealCalled)
 	})
 }
 
 func TestEngine_OpenImage(t *testing.T) {
 	tmpDir := t.TempDir()
-	statePath := filepath.Join(tmpDir, "state.json")
 
-	t.Run("error when no wallpaper path", func(t *testing.T) {
-		st := state.New(statePath)
-		e := &Engine{state: st}
+	t.Run("error when platform returns empty path", func(t *testing.T) {
+		mock := &mockPlatform{wallpaperPath: ""}
+		e := &Engine{platform: mock}
 
 		err := e.OpenImage()
 		require.Error(t, err)
@@ -226,13 +241,24 @@ func TestEngine_OpenImage(t *testing.T) {
 	})
 
 	t.Run("error when file does not exist", func(t *testing.T) {
-		st := state.New(statePath)
-		st.SetCurrent("/nonexistent/wallpaper.jpg", "source-1", "dark", "", false)
-		e := &Engine{state: st}
+		mock := &mockPlatform{wallpaperPath: "/nonexistent/wallpaper.jpg"}
+		e := &Engine{platform: mock}
 
 		err := e.OpenImage()
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no longer exists")
+	})
+
+	t.Run("success when file exists", func(t *testing.T) {
+		testFile := filepath.Join(tmpDir, "test.jpg")
+		require.NoError(t, os.WriteFile(testFile, []byte("test"), 0644))
+
+		mock := &mockPlatform{wallpaperPath: testFile}
+		e := &Engine{platform: mock}
+
+		err := e.OpenImage()
+		require.NoError(t, err)
+		assert.True(t, mock.openCalled)
 	})
 }
 
