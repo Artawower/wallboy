@@ -317,23 +317,19 @@ func (m *Manager) FetchFromProvider(ctx context.Context, theme, providerName, qu
 	return source.FetchRandom(ctx, queryOverride)
 }
 
-// FetchRandomRemote fetches a random image from remote sources.
+// FetchRandomRemote fetches a random image from remote sources using weighted selection.
 func (m *Manager) FetchRandomRemote(ctx context.Context, theme, queryOverride string) (*Image, error) {
 	sources := m.GetRemoteSources(theme)
 	if len(sources) == 0 {
 		return nil, fmt.Errorf("no remote sources for theme: %s", theme)
 	}
 
-	// Shuffle for random selection
-	shuffled := make([]*RemoteSource, len(sources))
-	copy(shuffled, sources)
-	m.rng.Shuffle(len(shuffled), func(i, j int) {
-		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-	})
+	// Order sources by weighted random selection
+	ordered := m.weightedShuffle(sources)
 
 	// Try each source until success
 	var lastErr error
-	for _, source := range shuffled {
+	for _, source := range ordered {
 		img, err := source.FetchRandom(ctx, queryOverride)
 		if err == nil {
 			return img, nil
@@ -342,6 +338,57 @@ func (m *Manager) FetchRandomRemote(ctx context.Context, theme, queryOverride st
 	}
 
 	return nil, fmt.Errorf("failed to fetch from remote: %w", lastErr)
+}
+
+// weightedShuffle returns sources ordered by weighted random selection.
+// Sources with higher weight have proportionally higher chance of being selected first.
+func (m *Manager) weightedShuffle(sources []*RemoteSource) []*RemoteSource {
+	if len(sources) <= 1 {
+		return sources
+	}
+
+	// Create a copy with remaining weights
+	type weightedSource struct {
+		source *RemoteSource
+		weight int
+	}
+
+	remaining := make([]weightedSource, len(sources))
+	for i, s := range sources {
+		remaining[i] = weightedSource{source: s, weight: s.Weight()}
+	}
+
+	result := make([]*RemoteSource, 0, len(sources))
+
+	for len(remaining) > 0 {
+		// Calculate total weight
+		totalWeight := 0
+		for _, ws := range remaining {
+			totalWeight += ws.weight
+		}
+
+		// Pick random value in [0, totalWeight)
+		pick := m.rng.Intn(totalWeight)
+
+		// Find which source this corresponds to
+		cumulative := 0
+		selectedIdx := 0
+		for i, ws := range remaining {
+			cumulative += ws.weight
+			if pick < cumulative {
+				selectedIdx = i
+				break
+			}
+		}
+
+		// Add selected source to result
+		result = append(result, remaining[selectedIdx].source)
+
+		// Remove from remaining
+		remaining = append(remaining[:selectedIdx], remaining[selectedIdx+1:]...)
+	}
+
+	return result
 }
 
 // CleanupTemp removes temporary files.

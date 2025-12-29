@@ -21,6 +21,7 @@ type RemoteSource struct {
 	uploadDir     string
 	tempDir       string
 	theme         string
+	weight        int
 	rng           *rand.Rand
 	prefetchStore PrefetchStore
 	prefetchWg    sync.WaitGroup
@@ -28,8 +29,13 @@ type RemoteSource struct {
 
 // NewRemoteSource creates a new remote source.
 // prefetchStore can be nil to disable prefetching.
-func NewRemoteSource(id, providerName, auth, theme, uploadDir, tempDir string, queries []string, prefetchStore PrefetchStore) *RemoteSource {
+// weight determines selection probability (default 1).
+func NewRemoteSource(id, providerName, auth, theme, uploadDir, tempDir string, queries []string, weight int, prefetchStore PrefetchStore) *RemoteSource {
 	p := provider.NewProvider(providerName, auth, nil)
+
+	if weight < 1 {
+		weight = 1
+	}
 
 	return &RemoteSource{
 		id:            id,
@@ -38,6 +44,7 @@ func NewRemoteSource(id, providerName, auth, theme, uploadDir, tempDir string, q
 		uploadDir:     uploadDir,
 		tempDir:       tempDir,
 		theme:         theme,
+		weight:        weight,
 		rng:           rand.New(rand.NewSource(time.Now().UnixNano())),
 		prefetchStore: prefetchStore,
 	}
@@ -48,6 +55,17 @@ func (s *RemoteSource) Type() SourceType  { return SourceTypeRemote }
 func (s *RemoteSource) Theme() string     { return s.theme }
 func (s *RemoteSource) UploadDir() string { return s.uploadDir }
 func (s *RemoteSource) TempDir() string   { return s.tempDir }
+func (s *RemoteSource) Weight() int       { return s.weight }
+
+// queryInList checks if a query is in the configured queries list.
+func (s *RemoteSource) queryInList(query string) bool {
+	for _, q := range s.queries {
+		if q == query {
+			return true
+		}
+	}
+	return false
+}
 
 func (s *RemoteSource) Description() string {
 	if s.provider != nil {
@@ -117,17 +135,20 @@ func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*
 		return nil, fmt.Errorf("no provider configured")
 	}
 
-	// Determine what query will actually be used for this request
-	actualQuery := strings.Join(s.queries, ", ")
-	if queryOverride != "" {
-		actualQuery = queryOverride
-	}
-
 	// Check if we have a prefetched image ready with matching query
 	if s.prefetchStore != nil {
 		if prefetchPath, prefetchQuery, ok := s.prefetchStore.GetPrefetch(s.id); ok {
-			// Only use prefetch if query matches
-			if prefetchQuery == actualQuery {
+			// Check if prefetch is valid for current request
+			prefetchValid := false
+			if queryOverride != "" {
+				// With override, prefetch must match exactly
+				prefetchValid = (prefetchQuery == queryOverride)
+			} else {
+				// Without override, prefetch is valid if its query is in our list
+				prefetchValid = s.queryInList(prefetchQuery)
+			}
+
+			if prefetchValid {
 				s.prefetchStore.ClearPrefetch(s.id)
 				_ = s.prefetchStore.Save()
 
@@ -171,14 +192,23 @@ func (s *RemoteSource) FetchRandom(ctx context.Context, queryOverride string) (*
 }
 
 // doFetch performs the actual fetch and download of an image.
+// It picks one random query from the configured queries (or uses queryOverride).
 func (s *RemoteSource) doFetch(ctx context.Context, queryOverride string) (*Image, error) {
 	if err := os.MkdirAll(s.tempDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
 	}
 
-	queries := s.queries
+	// Pick one random query (no need to search all - we only need 1 image)
+	var query string
 	if queryOverride != "" {
-		queries = []string{queryOverride}
+		query = queryOverride
+	} else if len(s.queries) > 0 {
+		query = s.queries[s.rng.Intn(len(s.queries))]
+	}
+
+	var queries []string
+	if query != "" {
+		queries = []string{query}
 	}
 
 	metas, err := s.provider.Search(ctx, queries)
@@ -187,7 +217,7 @@ func (s *RemoteSource) doFetch(ctx context.Context, queryOverride string) (*Imag
 	}
 
 	if len(metas) == 0 {
-		return nil, fmt.Errorf("no images found for queries: %v", queries)
+		return nil, fmt.Errorf("no images found for query: %q", query)
 	}
 
 	idx := s.rng.Intn(len(metas))
@@ -201,14 +231,11 @@ func (s *RemoteSource) doFetch(ctx context.Context, queryOverride string) (*Imag
 		return nil, fmt.Errorf("failed to download image: %w", err)
 	}
 
-	// Build query string for display
-	queryStr := strings.Join(queries, ", ")
-
 	return &Image{
 		Path:     downloadedPath,
 		SourceID: s.id,
 		Theme:    s.theme,
-		Query:    queryStr,
+		Query:    query,
 		IsLocal:  false,
 		URL:      meta.DownloadURL,
 	}, nil

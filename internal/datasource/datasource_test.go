@@ -241,9 +241,9 @@ func TestManager_GetRemoteSourceByProvider(t *testing.T) {
 	m := NewManager("/upload", "/temp")
 
 	// Add remote sources
-	m.AddRemoteSource(NewRemoteSource("dark-bing", "bing", "", "dark", "/upload", "/temp", nil, nil))
-	m.AddRemoteSource(NewRemoteSource("dark-wallhaven", "wallhaven", "key", "dark", "/upload", "/temp", nil, nil))
-	m.AddRemoteSource(NewRemoteSource("light-unsplash", "unsplash", "key", "light", "/upload", "/temp", nil, nil))
+	m.AddRemoteSource(NewRemoteSource("dark-bing", "bing", "", "dark", "/upload", "/temp", nil, 1, nil))
+	m.AddRemoteSource(NewRemoteSource("dark-wallhaven", "wallhaven", "key", "dark", "/upload", "/temp", nil, 1, nil))
+	m.AddRemoteSource(NewRemoteSource("light-unsplash", "unsplash", "key", "light", "/upload", "/temp", nil, 1, nil))
 
 	t.Run("finds bing provider for dark theme", func(t *testing.T) {
 		source, err := m.GetRemoteSourceByProvider("dark", "bing")
@@ -375,4 +375,93 @@ func TestSupportedExtensions(t *testing.T) {
 	for _, ext := range notSupported {
 		assert.False(t, SupportedExtensions[ext], "should not support %s", ext)
 	}
+}
+
+func TestManager_WeightedShuffle(t *testing.T) {
+	m := NewManager("/upload", "/temp")
+
+	// Create sources with different weights
+	// Source A: weight 10, Source B: weight 1
+	// A should be selected first ~91% of the time (10/11)
+	sourceA := NewRemoteSource("source-a", "bing", "", "dark", "/upload", "/temp", nil, 10, nil)
+	sourceB := NewRemoteSource("source-b", "bing", "", "dark", "/upload", "/temp", nil, 1, nil)
+
+	sources := []*RemoteSource{sourceA, sourceB}
+
+	// Run many iterations and count how often A is first
+	iterations := 1000
+	aFirstCount := 0
+
+	for i := 0; i < iterations; i++ {
+		result := m.weightedShuffle(sources)
+		if result[0].ID() == "source-a" {
+			aFirstCount++
+		}
+	}
+
+	// A should be first roughly 91% of the time (10/(10+1))
+	// Allow some variance: expect between 85% and 97%
+	ratio := float64(aFirstCount) / float64(iterations)
+	assert.Greater(t, ratio, 0.85, "source-a with weight 10 should be first most of the time")
+	assert.Less(t, ratio, 0.97, "but not always (randomness check)")
+}
+
+func TestManager_WeightedShuffle_EqualWeights(t *testing.T) {
+	m := NewManager("/upload", "/temp")
+
+	// All equal weights should give roughly equal distribution
+	sourceA := NewRemoteSource("source-a", "bing", "", "dark", "/upload", "/temp", nil, 1, nil)
+	sourceB := NewRemoteSource("source-b", "bing", "", "dark", "/upload", "/temp", nil, 1, nil)
+	sourceC := NewRemoteSource("source-c", "bing", "", "dark", "/upload", "/temp", nil, 1, nil)
+
+	sources := []*RemoteSource{sourceA, sourceB, sourceC}
+
+	iterations := 900
+	firstCounts := map[string]int{"source-a": 0, "source-b": 0, "source-c": 0}
+
+	for i := 0; i < iterations; i++ {
+		result := m.weightedShuffle(sources)
+		firstCounts[result[0].ID()]++
+	}
+
+	// Each should be first roughly 33% of the time
+	// Allow variance: expect between 25% and 42%
+	for id, count := range firstCounts {
+		ratio := float64(count) / float64(iterations)
+		assert.Greater(t, ratio, 0.25, "%s should be first at least 25%% of time", id)
+		assert.Less(t, ratio, 0.42, "%s should be first at most 42%% of time", id)
+	}
+}
+
+func TestManager_WeightedShuffle_SingleSource(t *testing.T) {
+	m := NewManager("/upload", "/temp")
+
+	source := NewRemoteSource("only-one", "bing", "", "dark", "/upload", "/temp", nil, 5, nil)
+	sources := []*RemoteSource{source}
+
+	result := m.weightedShuffle(sources)
+	require.Len(t, result, 1)
+	assert.Equal(t, "only-one", result[0].ID())
+}
+
+func TestManager_WeightedShuffle_PreservesAllSources(t *testing.T) {
+	m := NewManager("/upload", "/temp")
+
+	sourceA := NewRemoteSource("a", "bing", "", "dark", "/upload", "/temp", nil, 5, nil)
+	sourceB := NewRemoteSource("b", "bing", "", "dark", "/upload", "/temp", nil, 3, nil)
+	sourceC := NewRemoteSource("c", "bing", "", "dark", "/upload", "/temp", nil, 1, nil)
+
+	sources := []*RemoteSource{sourceA, sourceB, sourceC}
+	result := m.weightedShuffle(sources)
+
+	require.Len(t, result, 3)
+
+	// All sources should be present
+	ids := map[string]bool{}
+	for _, s := range result {
+		ids[s.ID()] = true
+	}
+	assert.True(t, ids["a"])
+	assert.True(t, ids["b"])
+	assert.True(t, ids["c"])
 }

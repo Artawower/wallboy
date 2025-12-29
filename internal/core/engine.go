@@ -93,7 +93,7 @@ func (e *Engine) initManager() {
 	queries := e.config.GetQueries(themeMode)
 	for name, providerCfg := range e.config.GetRemoteProviders(themeMode) {
 		id := fmt.Sprintf("%s-%s", theme, name)
-		source := datasource.NewRemoteSource(id, name, providerCfg.Auth, string(theme), uploadDir, tempDir, queries, e.state)
+		source := datasource.NewRemoteSource(id, name, providerCfg.Auth, string(theme), uploadDir, tempDir, queries, providerCfg.Weight, e.state)
 		e.manager.AddRemoteSource(source)
 	}
 }
@@ -253,9 +253,12 @@ func (e *Engine) pickFromProvider(ctx context.Context, theme, providerName strin
 	tempDir := config.GetTempDir()
 
 	// Get auth from config if provider exists there, otherwise empty (works for bing)
+	// Get auth and weight from config if provider exists there
 	var auth string
+	weight := 1
 	if providerCfg, exists := e.config.Providers[providerName]; exists {
 		auth = providerCfg.Auth
+		weight = providerCfg.Weight
 	}
 
 	// Create temporary source for this request and add to manager
@@ -268,6 +271,7 @@ func (e *Engine) pickFromProvider(ctx context.Context, theme, providerName strin
 		uploadDir,
 		tempDir,
 		e.config.GetQueries(themeMode),
+		weight,
 		e.state,
 	)
 	e.manager.AddRemoteSource(source)

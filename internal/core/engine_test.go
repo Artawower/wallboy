@@ -353,7 +353,7 @@ func TestEngine_pickFromProvider(t *testing.T) {
 
 		manager := datasource.NewManager(uploadDir, tmpDir)
 		// Add bing source to manager
-		manager.AddRemoteSource(datasource.NewRemoteSource("dark-bing", "bing", "", "dark", uploadDir, tmpDir, nil, nil))
+		manager.AddRemoteSource(datasource.NewRemoteSource("dark-bing", "bing", "", "dark", uploadDir, tmpDir, nil, 1, nil))
 
 		e := &Engine{
 			config:        cfg,
